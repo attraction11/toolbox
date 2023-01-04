@@ -104,3 +104,10 @@ npm run dev
 
 实现一个 ref 类，该类存在 2 个属性。\_\_isRef 标识当前对象是否为 ref，\_value 保存该对象的值。  
 对于简单类型值，不做处理；对于复杂类型值转为响应式对象（可以收集对象依赖的副作用）。
+
+## computed 的实现
+
+computed 和 effect 比较像，但是有 2 点不同：
+
+- effect 的副作用会立即执行 ，但 computed 不会
+- computed 的

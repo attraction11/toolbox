@@ -11,7 +11,7 @@ export function ref(value) {
     return value;
   }
 
-  return new RefClass(value);
+  return new RefImpl(value);
 }
 
 // 将复杂类型对象转为响应式对象，简单类型不做处理
@@ -20,7 +20,7 @@ function convert(value) {
 }
 
 /* 实现 ref 类 */
-class RefClass {
+class RefImpl {
   constructor(value) {
     this.__isRef = true;
     this._value = convert(value);

@@ -48,9 +48,25 @@
 // });
 
 /* 二、 ref的实现 */
-import { ref, effect } from './reactivity/index.js';
-const foo = (window.foo = ref(1));
+// import { ref, effect } from './reactivity/index.js';
+// const foo = (window.foo = ref(1));
 
-effect(() => {
-  console.log('foo: ', foo.value);
+// effect(() => {
+//   console.log('foo: ', foo.value);
+// });
+
+/* 三、computed的实现（缓存 + 懒计算） */
+import { ref, computed } from './reactivity/index.js';
+const num = (window.num = ref(0));
+window.d = computed({
+  get() {
+    console.log('calculate num.value * 2');
+    return num.value * 2;
+  },
+  set(newVal) {
+    console.log('update num.value');
+    num.value = newVal;
+  },
 });
+
+console.log(window.d.value);
