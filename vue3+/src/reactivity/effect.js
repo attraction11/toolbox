@@ -8,8 +8,8 @@ const effectStack = [];
 export function effect(fn, options = {}) {
   const effectFn = () => {
     try {
-      effectStack.push(effectFn);
       activeEffect = effectFn;
+      effectStack.push(activeEffect);
       return fn();
     } finally {
       effectStack.pop();
@@ -59,7 +59,7 @@ export function trigger(target, key) {
   if (!depsMap) return;
 
   const deps = depsMap.get(key);
-  if (deps) return;
+  if (!deps) return;
 
   deps.forEach((effectFn) => {
     if (effectFn.scheduler) {

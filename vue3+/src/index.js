@@ -56,17 +56,45 @@
 // });
 
 /* 三、computed的实现（缓存 + 懒计算） */
-import { ref, computed } from './reactivity/index.js';
-const num = (window.num = ref(0));
-window.d = computed({
-  get() {
-    console.log('calculate num.value * 2');
-    return num.value * 2;
-  },
-  set(newVal) {
-    console.log('update num.value');
-    num.value = newVal;
-  },
-});
+// import { ref, computed } from './reactivity/index.js';
+// const num = (window.num = ref(0));
+// window.d = computed({
+//   get() {
+//     console.log('calculate num.value * 2');
+//     return num.value * 2;
+//   },
+//   set(newVal) {
+//     console.log('update num.value');
+//     num.value = newVal;
+//   },
+// });
 
-console.log(window.d.value);
+// console.log(window.d.value);
+
+/***************************运行时模块(runtime)***************************/
+// import { render, h, Text, Fragment } from "./runtime/index.js";
+
+// const vnode = h(
+//     'div',
+//     {
+//         class: 'a b',
+//         style: {
+//             border: '1px solid',
+//             fontSize: '14px',
+//         },
+//         onClick: () => console.log('click'),
+//         id: 'foo',
+//         checked: '',
+//         custom: false
+//     },
+//     [h('ul', null, [
+//         h('li', { style: { color: 'red' } }, 1),
+//         h('li', null, 2),
+//         h('li', { style: { color: 'blue' } }, 3),
+//         h(Fragment, null, [h('li', null, '4'), h('li')]),
+//         h('li', null, [h(Text, null, 'hello world')])
+//     ])]
+// )
+
+// console.log('xx')
+// render(vnode, document.body)

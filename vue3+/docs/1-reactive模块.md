@@ -1,4 +1,4 @@
-# vue3+ 使用示例
+# reactive 模块
 
 ## 实现 mini-vue3+的目标
 
@@ -110,4 +110,4 @@ npm run dev
 computed 和 effect 比较像，但是有 2 点不同：
 
 - effect 的副作用会立即执行 ，但 computed 不会
-- computed 的
+- computed 的依赖变量变化后，不会去执行 getter 函数，而是执行一个调度函数，在调度函数中置\_dirty 为 false
