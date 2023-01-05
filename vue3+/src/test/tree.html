@@ -30,6 +30,7 @@
     setup(props) {
       const open = ref(false);
       const isFolder = computed(() => {
+        console.log('props.model: ', props.model);
         return props.model.children && props.model.children.length;
       });
 

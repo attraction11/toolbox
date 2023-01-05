@@ -809,7 +809,7 @@ function reactive(target) {
 
   // 解决对象的重复代理，仅第一次生效
   if (isReactive(target)) {
-    console.log('注意：对象被重复代理了哦~');
+    // console.log('注意：对象被重复代理了哦~');
     return target;
   }
 
@@ -826,7 +826,6 @@ function reactive(target) {
       if (key === '__isReactive') {
         return true;
       }
-      console.log('获取代理key的值');
       // 调用收集依赖
       (0,_effect_js__WEBPACK_IMPORTED_MODULE_1__.track)(target, key);
       const res = Reflect.get(target, key, receiver);
@@ -943,31 +942,6 @@ __webpack_require__.r(__webpack_exports__);
 
 
 
-function updateProps(instance, vnode) {
-  const { type: Component, props: vnodeProps } = vnode;
-  const props = (instance.props = {});
-  const attrs = (instance.attrs = {});
-  for (const key in vnodeProps) {
-    if (Component.props?.includes(key)) {
-      props[key] = vnodeProps[key];
-    } else {
-      attrs[key] = vnodeProps[key];
-    }
-  }
-  // toThink: props源码是shallowReactive，确实需要吗?
-  // 需要。否则子组件修改props不会触发更新
-  instance.props = (0,_reactivity__WEBPACK_IMPORTED_MODULE_0__.reactive)(instance.props);
-}
-
-function fallThrough(instance, subTree) {
-  if (Object.keys(instance.attrs).length) {
-    subTree.props = {
-      ...subTree.props,
-      ...instance.attrs,
-    };
-  }
-}
-
 function mountComponent(vnode, container, anchor, patch) {
   const { type: Component } = vnode;
 
@@ -1005,11 +979,11 @@ function mountComponent(vnode, container, anchor, patch) {
     Component.render = new Function('ctx', (0,_compiler__WEBPACK_IMPORTED_MODULE_3__.compile)(template));
   }
 
-  // setupRenderEffect
+  // 组件更新函数 ==> setupRenderEffect
   instance.update = (0,_reactivity__WEBPACK_IMPORTED_MODULE_0__.effect)(
     () => {
       if (!instance.isMounted) {
-        // mount
+        // 挂载组件(接收组件产出的vnode)
         const subTree = (instance.subTree = (0,_vnode__WEBPACK_IMPORTED_MODULE_1__.normalizeVNode)(
           Component.render(instance.ctx)
         ));
@@ -1048,6 +1022,31 @@ function mountComponent(vnode, container, anchor, patch) {
       scheduler: _scheduler__WEBPACK_IMPORTED_MODULE_2__.queueJob,
     }
   );
+}
+
+function updateProps(instance, vnode) {
+  const { type: Component, props: vnodeProps } = vnode;
+  const props = (instance.props = {});
+  const attrs = (instance.attrs = {});
+  for (const key in vnodeProps) {
+    if (Component.props?.includes(key)) {
+      props[key] = vnodeProps[key];
+    } else {
+      attrs[key] = vnodeProps[key];
+    }
+  }
+  // toThink: props源码是shallowReactive，确实需要吗?
+  // 需要。否则子组件修改props不会触发更新
+  instance.props = (0,_reactivity__WEBPACK_IMPORTED_MODULE_0__.reactive)(instance.props);
+}
+
+function fallThrough(instance, subTree) {
+  if (Object.keys(instance.attrs).length) {
+    subTree.props = {
+      ...subTree.props,
+      ...instance.attrs,
+    };
+  }
 }
 
 
@@ -1239,6 +1238,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   "patchProps": () => (/* binding */ patchProps)
 /* harmony export */ });
+// 对比新旧属性并赋值
 function patchProps(el, oldProps, newProps) {
   if (oldProps === newProps) {
     return;
@@ -1338,15 +1338,53 @@ __webpack_require__.r(__webpack_exports__);
 
 
 function render(vnode, container) {
+  // 获取旧的虚拟 dom 节点（_vnode 属性用于储存旧的虚拟节点）
   const prevVNode = container._vnode;
   if (!vnode) {
     if (prevVNode) {
+      // 新虚拟节点不存在，旧虚拟节点存在，卸载旧虚拟节点
       unmount(prevVNode);
     }
   } else {
+    // 新虚拟节点存在(旧节点不一定存在)，进行对比
     patch(prevVNode, vnode, container);
   }
+
+  // 将当前虚拟节点保存在父级节点上
   container._vnode = vnode;
+}
+
+function unmount(vnode) {
+  const { shapeFlag, el } = vnode;
+  // 逻辑与运算，判断当前节点类型是否为指定类型
+  if (shapeFlag & _vnode__WEBPACK_IMPORTED_MODULE_0__.ShapeFlags.COMPONENT) {
+    // 卸载组件节点
+    unmountComponent(vnode);
+  } else if (shapeFlag & _vnode__WEBPACK_IMPORTED_MODULE_0__.ShapeFlags.FRAGMENT) {
+    // 卸载占位符节点
+    unmountFragment(vnode);
+  } else {
+    // 卸载普通节点
+    el.parentNode.removeChild(el);
+  }
+}
+
+function unmountComponent(vnode) {
+  const { component } = vnode;
+  // 递归卸载组件节点的子组件
+  unmount(component.subTree);
+}
+
+function unmountFragment(vnode) {
+  // eslint-disable-next-line prefer-const
+  let { el: cur, anchor: end } = vnode;
+  while (cur !== end) {
+    const next = cur.nextSibling;
+    // 获取当前节点的父级节点，从父级中移除占位符
+    cur.parentNode.removeChild(cur);
+    cur = next;
+  }
+  end.parentNode.removeChild(end);
 }
 
 // n1可能为null，n2不可能为null
@@ -1369,7 +1407,22 @@ function patch(n1, n2, container, anchor) {
     processComponent(n1, n2, container, anchor);
   }
 }
+function isSameVNodeType(n1, n2) {
+  return n1.type === n2.type;
+}
 
+// 处理普通节点的对比和挂载
+function processElement(n1, n2, container, anchor) {
+  if (n1 == null) {
+    // 旧虚拟节点不存在的情况，挂载新节点
+    mountElement(n2, container, anchor);
+  } else {
+    // 旧新节点都存在，对比属性和子节点
+    patchElement(n1, n2);
+  }
+}
+
+// 挂载普通节点到容器 container 上
 function mountElement(vnode, container, anchor) {
   const { type, props, shapeFlag, children } = vnode;
   const el = document.createElement(type);
@@ -1383,6 +1436,7 @@ function mountElement(vnode, container, anchor) {
   }
 
   if (props) {
+    // 调用属性对比函数，赋值属性给节点（无需对比）
     (0,_patchProps__WEBPACK_IMPORTED_MODULE_1__.patchProps)(el, null, props);
   }
 
@@ -1390,94 +1444,10 @@ function mountElement(vnode, container, anchor) {
   container.insertBefore(el, anchor);
 }
 
-function mountTextNode(vnode, container, anchor) {
-  const textNode = document.createTextNode(vnode.children);
-  vnode.el = textNode;
-  container.insertBefore(textNode, anchor);
-}
-
 function mountChildren(children, container, anchor) {
   children.forEach((child) => {
     patch(null, child, container, anchor);
   });
-}
-
-function updateComponent(n1, n2) {
-  n2.component = n1.component;
-  n2.component.next = n2;
-  n2.component.update();
-}
-
-function unmount(vnode) {
-  const { shapeFlag, el } = vnode;
-  if (shapeFlag & _vnode__WEBPACK_IMPORTED_MODULE_0__.ShapeFlags.COMPONENT) {
-    unmountComponent(vnode);
-  } else if (shapeFlag & _vnode__WEBPACK_IMPORTED_MODULE_0__.ShapeFlags.FRAGMENT) {
-    unmountFragment(vnode);
-  } else {
-    el.parentNode.removeChild(el);
-  }
-}
-
-function unmountComponent(vnode) {
-  const { component } = vnode;
-  unmount(component.subTree);
-}
-
-function unmountFragment(vnode) {
-  // eslint-disable-next-line prefer-const
-  let { el: cur, anchor: end } = vnode;
-  while (cur !== end) {
-    const next = cur.nextSibling;
-    cur.parentNode.removeChild(cur);
-    cur = next;
-  }
-  end.parentNode.removeChild(end);
-}
-
-function isSameVNodeType(n1, n2) {
-  return n1.type === n2.type;
-}
-
-function processElement(n1, n2, container, anchor) {
-  if (n1 == null) {
-    mountElement(n2, container, anchor);
-  } else {
-    patchElement(n1, n2);
-  }
-}
-
-function processFragment(n1, n2, container, anchor) {
-  const fragmentStartAnchor = (n2.el = n1
-    ? n1.el
-    : document.createTextNode(''));
-  const fragmentEndAnchor = (n2.anchor = n1
-    ? n1.anchor
-    : document.createTextNode(''));
-  if (n1 == null) {
-    container.insertBefore(fragmentStartAnchor, anchor);
-    container.insertBefore(fragmentEndAnchor, anchor);
-    mountChildren(n2.children, container, fragmentEndAnchor);
-  } else {
-    patchChildren(n1, n2, container, fragmentEndAnchor);
-  }
-}
-
-function processText(n1, n2, container, anchor) {
-  if (n1 == null) {
-    mountTextNode(n2, container, anchor);
-  } else {
-    n2.el = n1.el;
-    n2.el.textContent = n2.children;
-  }
-}
-
-function processComponent(n1, n2, container, anchor) {
-  if (n1 == null) {
-    (0,_component__WEBPACK_IMPORTED_MODULE_2__.mountComponent)(n2, container, anchor, patch);
-  } else {
-    updateComponent(n1, n2);
-  }
 }
 
 function patchElement(n1, n2) {
@@ -1529,20 +1499,6 @@ function unmountChildren(children) {
   children.forEach((child) => unmount(child));
 }
 
-function patchUnkeyedChildren(c1, c2, container, anchor) {
-  const oldLength = c1.length;
-  const newLength = c2.length;
-  const commonLength = Math.min(oldLength, newLength);
-  for (let i = 0; i < commonLength; i++) {
-    patch(c1[i], c2[i], container, anchor);
-  }
-  if (newLength > oldLength) {
-    mountChildren(c2.slice(commonLength), container, anchor);
-  } else if (newLength < oldLength) {
-    unmountChildren(c1.slice(commonLength));
-  }
-}
-
 function patchKeyedChildren(c1, c2, container, anchor) {
   let i = 0,
     e1 = c1.length - 1,
@@ -1564,7 +1520,7 @@ function patchKeyedChildren(c1, c2, container, anchor) {
   if (i > e1) {
     // 3.经过1、2直接将旧结点比对完，则剩下的新结点直接mount
     const nextPos = e2 + 1;
-    const curAnchor = (c2[nextPos] && c2[nextPos].el) || anchor;
+    const curAnchor = (c2[nextPos] && c2[nextPos].e1) || anchor;
     for (let j = i; j <= e2; j++) {
       patch(null, c2[j], container, curAnchor);
     }
@@ -1641,6 +1597,20 @@ function patchKeyedChildren(c1, c2, container, anchor) {
   }
 }
 
+function patchUnkeyedChildren(c1, c2, container, anchor) {
+  const oldLength = c1.length;
+  const newLength = c2.length;
+  const commonLength = Math.min(oldLength, newLength);
+  for (let i = 0; i < commonLength; i++) {
+    patch(c1[i], c2[i], container, anchor);
+  }
+  if (newLength > oldLength) {
+    mountChildren(c2.slice(commonLength), container, anchor);
+  } else if (newLength < oldLength) {
+    unmountChildren(c1.slice(commonLength));
+  }
+}
+
 function getSequence(nums) {
   const result = [];
   const position = [];
@@ -1678,6 +1648,52 @@ function getSequence(nums) {
     }
   }
   return result;
+}
+
+function processText(n1, n2, container, anchor) {
+  if (n1 == null) {
+    mountTextNode(n2, container, anchor);
+  } else {
+    n2.el = n1.el;
+    n2.el.textContent = n2.children;
+  }
+}
+
+function mountTextNode(vnode, container, anchor) {
+  const textNode = document.createTextNode(vnode.children);
+  vnode.el = textNode;
+  container.insertBefore(textNode, anchor);
+}
+
+// anchor 是 Fragment 的专有属性
+function processFragment(n1, n2, container, anchor) {
+  const fragmentStartAnchor = (n2.el = n1
+    ? n1.el
+    : document.createTextNode(''));
+  const fragmentEndAnchor = (n2.anchor = n1
+    ? n1.anchor
+    : document.createTextNode(''));
+  if (n1 == null) {
+    container.insertBefore(fragmentStartAnchor, anchor);
+    container.insertBefore(fragmentEndAnchor, anchor);
+    mountChildren(n2.children, container, fragmentEndAnchor);
+  } else {
+    patchChildren(n1, n2, container, fragmentEndAnchor);
+  }
+}
+
+function processComponent(n1, n2, container, anchor) {
+  if (n1 == null) {
+    (0,_component__WEBPACK_IMPORTED_MODULE_2__.mountComponent)(n2, container, anchor, patch);
+  } else {
+    updateComponent(n1, n2);
+  }
+}
+
+function updateComponent(n1, n2) {
+  n2.component = n1.component;
+  n2.component.next = n2;
+  n2.component.update();
 }
 
 
@@ -1756,14 +1772,15 @@ __webpack_require__.r(__webpack_exports__);
 const Text = Symbol('Text');
 const Fragment = Symbol('Fragment');
 
+// 用于标识不同的节点类型
 const ShapeFlags = {
-  ELEMENT: 1,
-  TEXT: 1 << 1,
-  FRAGMENT: 1 << 2,
-  COMPONENT: 1 << 3,
-  TEXT_CHILDREN: 1 << 4,
-  ARRAY_CHILDREN: 1 << 5,
-  CHILDREN: (1 << 4) | (1 << 5),
+  ELEMENT: 1, // 00000001
+  TEXT: 1 << 1, // 00000010
+  FRAGMENT: 1 << 2, // 00000100
+  COMPONENT: 1 << 3, // 00001000
+  TEXT_CHILDREN: 1 << 4, // 00010000
+  ARRAY_CHILDREN: 1 << 5, // 00100000
+  CHILDREN: (1 << 4) | (1 << 5), //00110000
 };
 
 /**
@@ -1773,6 +1790,7 @@ const ShapeFlags = {
  * @param {string | array | null} children
  * @returns VNode
  */
+// 使用 render(h(rootComponent), rootContainer)
 function h(type, props = null, children = null) {
   let shapeFlag = 0;
   if ((0,_utils__WEBPACK_IMPORTED_MODULE_0__.isString)(type)) {
@@ -1785,7 +1803,7 @@ function h(type, props = null, children = null) {
     shapeFlag = ShapeFlags.COMPONENT;
   }
 
-  if (typeof children === 'string' || typeof children === 'number') {
+  if ((0,_utils__WEBPACK_IMPORTED_MODULE_0__.isString)(children) || (0,_utils__WEBPACK_IMPORTED_MODULE_0__.isNumber)(children)) {
     shapeFlag |= ShapeFlags.TEXT_CHILDREN;
     children = children.toString();
   } else if (Array.isArray(children)) {
@@ -1818,6 +1836,7 @@ function h(type, props = null, children = null) {
   };
 }
 
+// 处理节点嵌套（数组外嵌套占位节点）,方便函数能直接返回数组，字符串，数字
 function normalizeVNode(result) {
   if (Array.isArray(result)) {
     return h(Fragment, null, result);

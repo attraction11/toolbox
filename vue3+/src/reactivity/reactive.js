@@ -11,7 +11,7 @@ export function reactive(target) {
 
   // 解决对象的重复代理，仅第一次生效
   if (isReactive(target)) {
-    console.log('注意：对象被重复代理了哦~');
+    // console.log('注意：对象被重复代理了哦~');
     return target;
   }
 
@@ -28,7 +28,6 @@ export function reactive(target) {
       if (key === '__isReactive') {
         return true;
       }
-      console.log('获取代理key的值');
       // 调用收集依赖
       track(target, key);
       const res = Reflect.get(target, key, receiver);
