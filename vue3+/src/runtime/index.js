@@ -1,6 +1,6 @@
-export { h, Text, Fragment } from './vnode.js';
-export { render } from './render.js';
-export { createApp } from './createApp.js';
-export { renderList } from './helpers/renderList.js';
-export { withModel } from './helpers/vModel.js';
-export { nextTick } from './scheduler.js';
+export { h, Text, Fragment } from './vnode';
+export { render } from './render';
+export { createApp, resolveComponent } from './createApp';
+export { renderList } from './helpers/renderList';
+export { withModel } from './helpers/vModel';
+export { nextTick } from './scheduler';

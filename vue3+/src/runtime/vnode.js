@@ -1,5 +1,5 @@
-import { isArray, isNumber, isObject, isString } from '../utils/index.js';
-import { isReactive } from '../reactivity/index.js';
+import { isObject, isString, isNumber } from '../utils';
+import { isReactive } from '../reactivity';
 
 export const Text = Symbol('Text');
 export const Fragment = Symbol('Fragment');
@@ -25,25 +25,21 @@ export const ShapeFlags = {
 // 使用 render(h(rootComponent), rootContainer)
 export function h(type, props = null, children = null) {
   let shapeFlag = 0;
-  // 判断根节点的类型
   if (isString(type)) {
-    // 普通标签节点 如：<div>xx</div>
     shapeFlag = ShapeFlags.ELEMENT;
   } else if (type === Text) {
     shapeFlag = ShapeFlags.TEXT;
   } else if (type === Fragment) {
-    // 占位符节点<></>
     shapeFlag = ShapeFlags.FRAGMENT;
   } else {
     shapeFlag = ShapeFlags.COMPONENT;
   }
 
-  // 采用 |= 合并节点的类型和子节点类型
   if (isString(children) || isNumber(children)) {
     shapeFlag |= ShapeFlags.TEXT_CHILDREN;
     children = children.toString();
-  } else if (isArray(children)) {
-    shapeFlag = ShapeFlags.ARRAY_CHILDREN;
+  } else if (Array.isArray(children)) {
+    shapeFlag |= ShapeFlags.ARRAY_CHILDREN;
   }
 
   if (props) {
@@ -74,13 +70,11 @@ export function h(type, props = null, children = null) {
 
 // 处理节点嵌套（数组外嵌套占位节点）,方便函数能直接返回数组，字符串，数字
 export function normalizeVNode(result) {
-  if (isArray(result)) {
+  if (Array.isArray(result)) {
     return h(Fragment, null, result);
   }
-
   if (isObject(result)) {
     return result;
   }
-
   return h(Text, null, result.toString());
 }

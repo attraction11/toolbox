@@ -1,6 +1,6 @@
-import { ShapeFlags } from './vnode.js';
-import { patchProps } from './patchProps.js';
-import { mountComponent } from './component.js';
+import { ShapeFlags } from './vnode';
+import { patchProps } from './patchProps';
+import { mountComponent } from './component';
 
 export function render(vnode, container) {
   // 获取旧的虚拟 dom 节点（_vnode 属性用于储存旧的虚拟节点）
@@ -52,11 +52,10 @@ function unmountFragment(vnode) {
   end.parentNode.removeChild(end);
 }
 
-// n1为旧虚拟节点，n2为新虚拟节点，container为父级容器，anchor为标识以哪个节点为参照物
+// n1可能为null，n2不可能为null
 function patch(n1, n2, container, anchor) {
   if (n1 && !isSameVNodeType(n1, n2)) {
-    // 新旧节点为不同类型的节点
-    // 注意：n1被卸载后，n2将会被创建，因此anchor至关重要，需要将它设置为n1的洗一个兄弟节点
+    // n1被卸载后，n2将会创建，因此anchor至关重要。需要将它设置为n1的下一个兄弟节点
     anchor = (n1.anchor || n1.el).nextSibling;
     unmount(n1);
     n1 = null;
@@ -64,7 +63,6 @@ function patch(n1, n2, container, anchor) {
 
   const { shapeFlag } = n2;
   if (shapeFlag & ShapeFlags.ELEMENT) {
-    // 新节点为普通节点
     processElement(n1, n2, container, anchor);
   } else if (shapeFlag & ShapeFlags.TEXT) {
     processText(n1, n2, container, anchor);
@@ -74,15 +72,13 @@ function patch(n1, n2, container, anchor) {
     processComponent(n1, n2, container, anchor);
   }
 }
-
 function isSameVNodeType(n1, n2) {
   return n1.type === n2.type;
-  //   return n1.type === n2.type && n1.key === n2.key;
 }
 
 // 处理普通节点的对比和挂载
 function processElement(n1, n2, container, anchor) {
-  if (n1 === null) {
+  if (n1 == null) {
     // 旧虚拟节点不存在的情况，挂载新节点
     mountElement(n2, container, anchor);
   } else {
@@ -97,11 +93,10 @@ function mountElement(vnode, container, anchor) {
   const el = document.createElement(type);
 
   if (shapeFlag & ShapeFlags.TEXT_CHILDREN) {
-    // 子节点为文本节点时，赋值给 el
     el.textContent = children;
   } else if (shapeFlag & ShapeFlags.ARRAY_CHILDREN) {
-    // 这里不能传anchor。因为anchor限制的是当前的element ??
-    // 作为本element的children，不用指定anchor，append就行 ??
+    // 这里不能传anchor。因为anchor限制的是当前的element
+    // 作为本element的children，不用指定anchor，append就行
     mountChildren(children, el);
   }
 
@@ -110,13 +105,11 @@ function mountElement(vnode, container, anchor) {
     patchProps(el, null, props);
   }
 
-  // 将当前真实节点保存到虚拟节点的属性上
   vnode.el = el;
   container.insertBefore(el, anchor);
 }
 
 function mountChildren(children, container, anchor) {
-  // 遍历挂载新节点的子节点到 container 上
   children.forEach((child) => {
     patch(null, child, container, anchor);
   });
@@ -128,42 +121,38 @@ function patchElement(n1, n2) {
   patchChildren(n1, n2, n2.el);
 }
 
-// 对比新旧节点的差异
 function patchChildren(n1, n2, container, anchor) {
   const { shapeFlag: prevShapeFlag, children: c1 } = n1;
   const { shapeFlag, children: c2 } = n2;
 
   if (shapeFlag & ShapeFlags.TEXT_CHILDREN) {
-    // 新节点为文本节点，旧节点为含子节点的数组
     if (prevShapeFlag & ShapeFlags.ARRAY_CHILDREN) {
-      // 遍历移除子节点
       unmountChildren(c1);
     }
     if (c2 !== c1) {
-      // 采用新节点文本内容覆盖旧文本
       container.textContent = c2;
     }
   } else {
+    // c2 is array or null
     if (prevShapeFlag & ShapeFlags.ARRAY_CHILDREN) {
+      // c1 was array
       if (shapeFlag & ShapeFlags.ARRAY_CHILDREN) {
-        // 新旧节点都有子节点（简单认为头一个元素有key就都有key）最核心的对比
+        // c2 is array
+        // 简单认为头一个元素有key就都有key
         if (c1[0] && c1[0].key != null && c2[0] && c2[0].key != null) {
-          // 有key的diff算法
           patchKeyedChildren(c1, c2, container, anchor);
         } else {
-          // 无key的diff算法
           patchUnkeyedChildren(c1, c2, container, anchor);
         }
       } else {
-        // 新节点不存在
+        // c2 is null
         unmountChildren(c1);
       }
     } else {
-      // 旧节点没有子节点。旧节点为文本节点
+      // c1 was text or null
       if (prevShapeFlag & ShapeFlags.TEXT_CHILDREN) {
         container.textContent = '';
       }
-      // 新节点有子节点
       if (shapeFlag & ShapeFlags.ARRAY_CHILDREN) {
         mountChildren(c2, container, anchor);
       }
@@ -179,61 +168,40 @@ function patchKeyedChildren(c1, c2, container, anchor) {
   let i = 0,
     e1 = c1.length - 1,
     e2 = c2.length - 1;
-
-  // 1、从左至右依次对比（key 的判断采用 isSameVNodeType）
-  // (a b) c
-  // (a b) d e
+  // 1.从左至右依次比对
+  // key的判断可能要换成isSameVNodetype
   while (i <= e1 && i <= e2 && c1[i].key === c2[i].key) {
     patch(c1[i], c2[i], container, anchor);
     i++;
   }
 
-  // 2、从右至左依次对比
-  // a (b c)
-  // d e (b c)
-  while ((i <= e1) & (i <= e2) & (c1[e1].key === c2[e2].key)) {
+  // 2.从右至左依次比对
+  while (i <= e1 && i <= e2 && c1[e1].key === c2[e2].key) {
     patch(c1[e1], c2[e2], container, anchor);
     e1--;
     e2--;
   }
 
-  // 情况描述：
-  // (a b)
-  // (a b) c
-  // i = 2, e1 = 1, e2 = 2
-  // (a b)
-  // c (a b)
-  // i = 0, e1 = -1, e2 = 0
   if (i > e1) {
-    // 3.1、经过1、2直接将旧节点对比完了，则剩余的新节点直接 挂载（mount）
+    // 3.经过1、2直接将旧结点比对完，则剩下的新结点直接mount
     const nextPos = e2 + 1;
     const curAnchor = (c2[nextPos] && c2[nextPos].e1) || anchor;
     for (let j = i; j <= e2; j++) {
       patch(null, c2[j], container, curAnchor);
     }
-  }
-  // 情况描述：
-  // (a b) c
-  // (a b)
-  // i = 2, e1 = 2, e2 = 1
-  // a (b c)
-  // (b c)
-  // i = 0, e1 = 0, e2 = -1
-  else if (i > e2) {
-    // 3.2、经过1、2直接将新节点对比完了，则剩余的旧节点直接 卸载（unmount）
+  } else if (i > e2) {
+    // 3.经过1、2直接将新结点比对完，则剩下的旧结点直接unmount
     for (let j = i; j <= e1; j++) {
       unmount(c1[j]);
     }
   } else {
-    // 4、采用传统的diff算法，但不真的添加和移动，只做标记和删除
+    // 4.采用传统diff算法，但不真的添加和移动，只做标记和删除
     const map = new Map();
     for (let j = i; j <= e1; j++) {
       const prev = c1[j];
       map.set(prev.key, { prev, j });
     }
-
-    // 用来跟踪任何节点是否有被移动
-    // 设置一个变量 `maxNewIndexSoFar`，记录当前的 `next` 在 `c1` 中找到的 `index` 的最大值。
+    // used to track whether any node has moved
     let maxNewIndexSoFar = 0;
     let move = false;
     const toMounted = [];
@@ -244,29 +212,19 @@ function patchKeyedChildren(c1, c2, container, anchor) {
         const { prev, j } = map.get(next.key);
         patch(prev, next, container, anchor);
         if (j < maxNewIndexSoFar) {
-          /* 
-            若 `index` 小于 `maxNewIndexSoFar`，说明需要移动。它应该移动到上一个 `next` 之后。
-            因此 `anchor` 设置为 `c2[i-1].el.nextSibling`。
-          */
           move = true;
         } else {
-          /* 
-            若新找到的 `index` 大于等于 `maxNewIndexSoFar`，说明 `index` 呈升序，
-            不需要移动，并更新 `maxNewIndexSoFar` 为 `index`（增大）。 
-          */
           maxNewIndexSoFar = j;
         }
         source[k] = j;
-        // 记录需要删除的 key
         map.delete(next.key);
       } else {
-        /* 
-          再考虑没 `c1` 中没有找到相同 `key` 的情况，将待新添加的节点放入toMounted
-         */
+        // 将待新添加的节点放入toMounted
         toMounted.push(k + i);
       }
     }
 
+    // 先刪除多余旧节点
     map.forEach(({ prev }) => {
       unmount(prev);
     });
@@ -359,10 +317,8 @@ function getSequence(nums) {
 
 function processText(n1, n2, container, anchor) {
   if (n1 == null) {
-    // 旧文本节点不存在，挂载新文本节点
     mountTextNode(n2, container, anchor);
   } else {
-    // 旧文本节点存在,用新文本覆盖旧文本节点的 textContent 属性
     n2.el = n1.el;
     n2.el.textContent = n2.children;
   }
@@ -382,7 +338,6 @@ function processFragment(n1, n2, container, anchor) {
   const fragmentEndAnchor = (n2.anchor = n1
     ? n1.anchor
     : document.createTextNode(''));
-
   if (n1 == null) {
     container.insertBefore(fragmentStartAnchor, anchor);
     container.insertBefore(fragmentEndAnchor, anchor);
@@ -402,6 +357,6 @@ function processComponent(n1, n2, container, anchor) {
 
 function updateComponent(n1, n2) {
   n2.component = n1.component;
-  n2.commonent.next = n2;
-  n2.commonent.update();
+  n2.component.next = n2;
+  n2.component.update();
 }

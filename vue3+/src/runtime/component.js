@@ -1,10 +1,12 @@
-import { reactive, effect } from '../reactivity/index.js';
-import { normalizeVNode } from './vnode.js';
-import { queueJob } from './scheduler.js';
-import { compile } from '../compiler/index.js';
+import { reactive, effect } from '../reactivity';
+import { normalizeVNode } from './vnode';
+import { queueJob } from './scheduler';
+import { compile } from '../compiler';
 
 export function mountComponent(vnode, container, anchor, patch) {
   const { type: Component } = vnode;
+
+  // createComponentInstance
   const instance = (vnode.component = {
     props: {},
     attrs: {},
@@ -16,8 +18,10 @@ export function mountComponent(vnode, container, anchor, patch) {
     next: null, // 组件更新时，把新vnode暂放在这里
   });
 
+  // setupComponent
   updateProps(instance, vnode);
 
+  // 源码：instance.setupState = proxyRefs(setupResult)
   instance.setupState = Component.setup?.(instance.props, {
     attrs: instance.attrs,
   });
@@ -49,11 +53,13 @@ export function mountComponent(vnode, container, anchor, patch) {
 
         patch(null, subTree, container, anchor);
         instance.isMounted = true;
-        vnode = subTree.el;
+        vnode.el = subTree.el;
       } else {
-        // 更新组件
+        // update
+
+        // instance.next存在，代表是被动更新。否则是主动更新
         if (instance.next) {
-          vnode = instance.next; // 新组件（储存的n2）
+          vnode = instance.next;
           instance.next = null;
           updateProps(instance, vnode);
           instance.ctx = {
@@ -66,9 +72,10 @@ export function mountComponent(vnode, container, anchor, patch) {
         const subTree = (instance.subTree = normalizeVNode(
           Component.render(instance.ctx)
         ));
+
         fallThrough(instance, subTree);
 
-        patch(prev, subTree.container, anchor);
+        patch(prev, subTree, container, anchor);
         vnode.el = subTree.el;
       }
     },
@@ -79,22 +86,18 @@ export function mountComponent(vnode, container, anchor, patch) {
 }
 
 function updateProps(instance, vnode) {
-  const { type: Commonent, props: vnodeProps } = vnode;
+  const { type: Component, props: vnodeProps } = vnode;
   const props = (instance.props = {});
   const attrs = (instance.attrs = {});
-
-  // 用虚拟节点的属性赋值给组件实例
   for (const key in vnodeProps) {
-    if (Commonent.props?.includes(key)) {
+    if (Component.props?.includes(key)) {
       props[key] = vnodeProps[key];
     } else {
       attrs[key] = vnodeProps[key];
     }
   }
-
   // toThink: props源码是shallowReactive，确实需要吗?
   // 需要。否则子组件修改props不会触发更新
-  // 将组件的 props 变为响应式对象
   instance.props = reactive(instance.props);
 }
 
@@ -102,7 +105,7 @@ function fallThrough(instance, subTree) {
   if (Object.keys(instance.attrs).length) {
     subTree.props = {
       ...subTree.props,
-      ...subTree.attrs,
+      ...instance.attrs,
     };
   }
 }
