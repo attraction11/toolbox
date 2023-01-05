@@ -2,6 +2,607 @@
 /******/ 	"use strict";
 /******/ 	var __webpack_modules__ = ({
 
+/***/ "./src/compiler/ast.js":
+/*!*****************************!*\
+  !*** ./src/compiler/ast.js ***!
+  \*****************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "ElementTypes": () => (/* binding */ ElementTypes),
+/* harmony export */   "NodeTypes": () => (/* binding */ NodeTypes),
+/* harmony export */   "createRoot": () => (/* binding */ createRoot)
+/* harmony export */ });
+const NodeTypes = {
+  ROOT: 'ROOT',
+  ELEMENT: 'ELEMENT',
+  TEXT: 'TEXT',
+  SIMPLE_EXPRESSION: 'SIMPLE_EXPRESSION',
+  INTERPOLATION: 'INTERPOLATION',
+  ATTRIBUTE: 'ATTRIBUTE',
+  DIRECTIVE: 'DIRECTIVE',
+};
+
+const ElementTypes = {
+  ELEMENT: 'ELEMENT',
+  COMPONENT: 'COMPONENT',
+};
+
+function createRoot(children) {
+  return {
+    type: NodeTypes.ROOT,
+    children,
+  };
+}
+
+
+/***/ }),
+
+/***/ "./src/compiler/codegen.js":
+/*!*********************************!*\
+  !*** ./src/compiler/codegen.js ***!
+  \*********************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "generate": () => (/* binding */ generate),
+/* harmony export */   "traverseNode": () => (/* binding */ traverseNode)
+/* harmony export */ });
+/* harmony import */ var _ast__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./ast */ "./src/compiler/ast.js");
+/* harmony import */ var _utils__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ../utils */ "./src/utils/index.js");
+
+
+
+function generate(ast) {
+  const returns = traverseNode(ast);
+  const code = `
+with (ctx) {
+    const { h, Text, Fragment, renderList, resolveComponent, withModel } = MiniVue
+    return ${returns}
+}`;
+  return code;
+}
+
+function traverseNode(node, parent) {
+  switch (node.type) {
+    case _ast__WEBPACK_IMPORTED_MODULE_0__.NodeTypes.ROOT:
+      if (node.children.length === 1) {
+        return traverseNode(node.children[0], node);
+      }
+      const result = traverseChildren(node);
+      return node.children.length > 1 ? `[${result}]` : result;
+    case _ast__WEBPACK_IMPORTED_MODULE_0__.NodeTypes.ELEMENT:
+      return resolveElementASTNode(node, parent);
+    case _ast__WEBPACK_IMPORTED_MODULE_0__.NodeTypes.TEXT:
+      return createTextVNode(node);
+    case _ast__WEBPACK_IMPORTED_MODULE_0__.NodeTypes.INTERPOLATION:
+      return createTextVNode(node.content);
+  }
+}
+
+function traverseChildren(node) {
+  const { children } = node;
+
+  if (children.length === 1) {
+    const child = children[0];
+    if (child.type === _ast__WEBPACK_IMPORTED_MODULE_0__.NodeTypes.TEXT) {
+      return createText(child);
+    }
+    if (child.type === _ast__WEBPACK_IMPORTED_MODULE_0__.NodeTypes.INTERPOLATION) {
+      return createText(child.content);
+    }
+  }
+
+  const results = [];
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i];
+    results.push(traverseNode(child, node));
+  }
+
+  return results.join(', ');
+}
+
+// 这里parent是必然存在的
+function resolveElementASTNode(node, parent) {
+  const ifNode =
+    pluck(node.directives, 'if') || pluck(node.directives, 'else-if');
+
+  if (ifNode) {
+    // 递归必须用resolveElementASTNode，因为一个元素可能有多个指令
+    // 所以处理指令时，移除当下指令也是必须的
+    const consequent = resolveElementASTNode(node, parent);
+    let alternate;
+
+    // 如果有ifNode，则需要看它的下一个元素节点是否有else-if或else
+    const { children } = parent;
+    let i = children.findIndex((child) => child === node) + 1;
+    for (; i < children.length; i++) {
+      const sibling = children[i];
+
+      // <div v-if="ok"/> <p v-else-if="no"/> <span v-else/>
+      // 为了处理上面的例子，需要将空节点删除
+      // 也因此，才需要用上for循环
+      if (sibling.type === _ast__WEBPACK_IMPORTED_MODULE_0__.NodeTypes.TEXT && !sibling.content.trim()) {
+        children.splice(i, 1);
+        i--;
+        continue;
+      }
+
+      if (
+        sibling.type === _ast__WEBPACK_IMPORTED_MODULE_0__.NodeTypes.ELEMENT &&
+        (pluck(sibling.directives, 'else') ||
+          // else-if 既是上一个条件语句的 alternate，又是新语句的 condition
+          // 因此pluck时不删除指令，下一次循环时当作ifNode处理
+          pluck(sibling.directives, 'else-if', false))
+      ) {
+        alternate = resolveElementASTNode(sibling, parent);
+        children.splice(i, 1);
+      }
+      // 只用向前寻找一个相临的元素，因此for循环到这里可以立即退出
+      break;
+    }
+
+    const { exp } = ifNode;
+    return `${exp.content} ? ${consequent} : ${alternate || createTextVNode()}`;
+  }
+
+  const forNode = pluck(node.directives, 'for');
+  if (forNode) {
+    const { exp } = forNode;
+    const [args, source] = exp.content.split(/\sin\s|\sof\s/);
+    return `h(Fragment, null, renderList(${source.trim()}, ${args.trim()} => ${resolveElementASTNode(
+      node
+    )}))`;
+  }
+
+  return createElementVNode(node);
+}
+
+function createElementVNode(node) {
+  const { children, directives } = node;
+
+  const tag =
+    node.tagType === _ast__WEBPACK_IMPORTED_MODULE_0__.ElementTypes.ELEMENT
+      ? `"${node.tag}"`
+      : `resolveComponent("${node.tag}")`;
+
+  const propArr = createPropArr(node);
+  let propStr = propArr.length ? `{ ${propArr.join(', ')} }` : 'null';
+
+  const vModel = pluck(directives, 'model');
+  if (vModel) {
+    const getter = `() => ${createText(vModel.exp)}`;
+    const setter = `value => ${createText(vModel.exp)} = value`;
+    propStr = `withModel(${tag}, ${propStr}, ${getter}, ${setter})`;
+  }
+
+  if (!children.length) {
+    if (propStr === 'null') {
+      return `h(${tag})`;
+    }
+    return `h(${tag}, ${propStr})`;
+  }
+
+  let childrenStr = traverseChildren(node);
+  if (children[0].type === _ast__WEBPACK_IMPORTED_MODULE_0__.NodeTypes.ELEMENT) {
+    childrenStr = `[${childrenStr}]`;
+  }
+  return `h(${tag}, ${propStr}, ${childrenStr})`;
+}
+
+function createPropArr(node) {
+  const { props, directives } = node;
+  return [
+    ...props.map((prop) => `${prop.name}: ${createText(prop.value)}`),
+    ...directives.map((dir) => {
+      const content = dir.arg?.content;
+      switch (dir.name) {
+        case 'bind':
+          return `${content}: ${createText(dir.exp)}`;
+        case 'on':
+          const eventName = `on${(0,_utils__WEBPACK_IMPORTED_MODULE_1__.capitalize)(content)}`;
+          let exp = dir.exp.content;
+
+          // 以括号结尾，并且不含'=>'的情况，如 @click="foo()"
+          // 当然，判断很不严谨，比如不支持 @click="i++"
+          if (/\([^)]*?\)$/.test(exp) && !exp.includes('=>')) {
+            exp = `$event => (${exp})`;
+          }
+          return `${eventName}: ${exp}`;
+        case 'html':
+          return `innerHTML: ${createText(dir.exp)}`;
+        default:
+          return `${dir.name}: ${createText(dir.exp)}`;
+      }
+    }),
+  ];
+}
+
+// 可以不remove吗？不可以
+function pluck(directives, name, remove = true) {
+  const index = directives.findIndex((dir) => dir.name === name);
+  const dir = directives[index];
+  if (remove && index > -1) {
+    directives.splice(index, 1);
+  }
+  return dir;
+}
+
+// node只接收text和simpleExpresstion
+function createTextVNode(node) {
+  const child = createText(node);
+  return `h(Text, null, ${child})`;
+}
+
+function createText({ content = '', isStatic = true } = {}) {
+  return isStatic ? JSON.stringify(content) : content;
+}
+
+
+/***/ }),
+
+/***/ "./src/compiler/compile.js":
+/*!*********************************!*\
+  !*** ./src/compiler/compile.js ***!
+  \*********************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "compile": () => (/* binding */ compile)
+/* harmony export */ });
+/* harmony import */ var _parse__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./parse */ "./src/compiler/parse.js");
+/* harmony import */ var _codegen__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./codegen */ "./src/compiler/codegen.js");
+
+
+
+function compile(template) {
+  const ast = (0,_parse__WEBPACK_IMPORTED_MODULE_0__.parse)(template);
+  return (0,_codegen__WEBPACK_IMPORTED_MODULE_1__.generate)(ast);
+}
+
+
+/***/ }),
+
+/***/ "./src/compiler/index.js":
+/*!*******************************!*\
+  !*** ./src/compiler/index.js ***!
+  \*******************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "NodeTypes": () => (/* reexport safe */ _ast__WEBPACK_IMPORTED_MODULE_1__.NodeTypes),
+/* harmony export */   "compile": () => (/* reexport safe */ _compile__WEBPACK_IMPORTED_MODULE_2__.compile),
+/* harmony export */   "isNativeTag": () => (/* binding */ isNativeTag),
+/* harmony export */   "isVoidTag": () => (/* binding */ isVoidTag),
+/* harmony export */   "parse": () => (/* reexport safe */ _parse__WEBPACK_IMPORTED_MODULE_0__.parse)
+/* harmony export */ });
+/* harmony import */ var _parse__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./parse */ "./src/compiler/parse.js");
+/* harmony import */ var _ast__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./ast */ "./src/compiler/ast.js");
+/* harmony import */ var _compile__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./compile */ "./src/compiler/compile.js");
+const HTML_TAGS =
+  'html,body,base,head,link,meta,style,title,address,article,aside,footer,' +
+  'header,h1,h2,h3,h4,h5,h6,hgroup,nav,section,div,dd,dl,dt,figcaption,' +
+  'figure,picture,hr,img,li,main,ol,p,pre,ul,a,b,abbr,bdi,bdo,br,cite,code,' +
+  'data,dfn,em,i,kbd,mark,q,rp,rt,rtc,ruby,s,samp,small,span,strong,sub,sup,' +
+  'time,u,var,wbr,area,audio,map,track,video,embed,object,param,source,' +
+  'canvas,script,noscript,del,ins,caption,col,colgroup,table,thead,tbody,td,' +
+  'th,tr,button,datalist,fieldset,form,input,label,legend,meter,optgroup,' +
+  'option,output,progress,select,textarea,details,dialog,menu,' +
+  'summary,template,blockquote,iframe,tfoot';
+
+const VOID_TAGS =
+  'area,base,br,col,embed,hr,img,input,link,meta,param,source,track,wbr';
+
+function makeMap(str) {
+  const map = str
+    .split(',')
+    .reduce((map, item) => ((map[item] = true), map), Object.create(null));
+  return (val) => !!map[val];
+}
+
+const isVoidTag = makeMap(VOID_TAGS);
+const isNativeTag = makeMap(HTML_TAGS);
+
+
+
+
+
+
+/***/ }),
+
+/***/ "./src/compiler/parse.js":
+/*!*******************************!*\
+  !*** ./src/compiler/parse.js ***!
+  \*******************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "parse": () => (/* binding */ parse)
+/* harmony export */ });
+/* harmony import */ var _utils__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../utils */ "./src/utils/index.js");
+/* harmony import */ var _ast__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./ast */ "./src/compiler/ast.js");
+/* harmony import */ var _index__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./index */ "./src/compiler/index.js");
+
+
+
+
+function parse(content) {
+  const context = createParserContext(content);
+  return (0,_ast__WEBPACK_IMPORTED_MODULE_1__.createRoot)(parseChildren(context));
+}
+
+function createParserContext(content) {
+  return {
+    options: {
+      delimiters: ['{{', '}}'],
+      isVoidTag: _index__WEBPACK_IMPORTED_MODULE_2__.isVoidTag,
+      isNativeTag: _index__WEBPACK_IMPORTED_MODULE_2__.isNativeTag,
+    },
+    source: content,
+  };
+}
+
+function parseChildren(context) {
+  const nodes = [];
+
+  while (!isEnd(context)) {
+    const s = context.source;
+    let node;
+    if (s.startsWith(context.options.delimiters[0])) {
+      // '{{'
+      node = parseInterpolation(context);
+    } else if (s[0] === '<') {
+      node = parseElement(context);
+    } else {
+      node = parseText(context);
+    }
+    nodes.push(node);
+  }
+
+  let removedWhitespace = false;
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    if (node.type === _ast__WEBPACK_IMPORTED_MODULE_1__.NodeTypes.TEXT) {
+      // 全是空白的节点
+      if (!/[^\t\r\n\f ]/.test(node.content)) {
+        const prev = nodes[i - 1];
+        const next = nodes[i + 1];
+        if (
+          !prev ||
+          !next ||
+          (prev.type === _ast__WEBPACK_IMPORTED_MODULE_1__.NodeTypes.ELEMENT &&
+            next.type === _ast__WEBPACK_IMPORTED_MODULE_1__.NodeTypes.ELEMENT &&
+            /[\r\n]/.test(node.content))
+        ) {
+          removedWhitespace = true;
+          nodes[i] = null;
+        } else {
+          // Otherwise, the whitespace is condensed into a single space
+          node.content = ' ';
+        }
+      } else {
+        node.content = node.content.replace(/[\t\r\n\f ]+/g, ' ');
+      }
+    }
+  }
+
+  return removedWhitespace ? nodes.filter(Boolean) : nodes;
+}
+
+function isEnd(context) {
+  const s = context.source;
+  return s.startsWith('</') || !s;
+}
+
+function parseInterpolation(context) {
+  const [open, close] = context.options.delimiters;
+
+  advanceBy(context, open.length);
+  const closeIndex = context.source.indexOf(close);
+
+  const content = parseTextData(context, closeIndex).trim();
+  advanceBy(context, close.length);
+
+  return {
+    type: _ast__WEBPACK_IMPORTED_MODULE_1__.NodeTypes.INTERPOLATION,
+    content: {
+      type: _ast__WEBPACK_IMPORTED_MODULE_1__.NodeTypes.SIMPLE_EXPRESSION,
+      isStatic: false,
+      content,
+    },
+  };
+}
+
+function advanceBy(context, numberOfCharacters) {
+  const { source } = context;
+  context.source = source.slice(numberOfCharacters);
+}
+
+// 没有trim
+function parseTextData(context, length) {
+  const rawText = context.source.slice(0, length);
+  advanceBy(context, length);
+  return rawText;
+}
+
+// 不支持文本节点中带有'<'符号
+function parseText(context) {
+  const endTokens = ['<', context.options.delimiters[0]];
+
+  // 寻找text最近的endIndex。因为遇到'<'或'{{'都可能结束
+  let endIndex = context.source.length;
+  for (let i = 0; i < endTokens.length; i++) {
+    const index = context.source.indexOf(endTokens[i], 1);
+    if (index !== -1 && endIndex > index) {
+      endIndex = index;
+    }
+  }
+
+  const content = parseTextData(context, endIndex);
+
+  return {
+    type: _ast__WEBPACK_IMPORTED_MODULE_1__.NodeTypes.TEXT,
+    content,
+  };
+}
+
+function parseElement(context) {
+  // Start tag.
+  const element = parseTag(context);
+
+  if (element.isSelfClosing || context.options.isVoidTag(element.tag)) {
+    return element;
+  }
+
+  // Children.
+  element.children = parseChildren(context);
+
+  // End tag.
+  parseTag(context);
+
+  return element;
+}
+
+function parseTag(context) {
+  // Tag open.
+  const match = /^<\/?([a-z][^\t\r\n\f />]*)/i.exec(context.source);
+  const tag = match[1];
+
+  advanceBy(context, match[0].length);
+  advanceSpaces(context);
+
+  // Attributes.
+  const { props, directives } = parseAttributes(context);
+
+  // Tag close.
+  const isSelfClosing = context.source.startsWith('/>');
+
+  advanceBy(context, isSelfClosing ? 2 : 1);
+
+  const tagType = isComponent(tag, context)
+    ? _ast__WEBPACK_IMPORTED_MODULE_1__.ElementTypes.COMPONENT
+    : _ast__WEBPACK_IMPORTED_MODULE_1__.ElementTypes.ELEMENT;
+
+  return {
+    type: _ast__WEBPACK_IMPORTED_MODULE_1__.NodeTypes.ELEMENT,
+    tag,
+    tagType,
+    props,
+    directives,
+    isSelfClosing,
+    children: [],
+  };
+}
+
+function isComponent(tag, context) {
+  const { options } = context;
+  return !options.isNativeTag(tag);
+}
+
+function advanceSpaces(context) {
+  const match = /^[\t\r\n\f ]+/.exec(context.source);
+  if (match) {
+    advanceBy(context, match[0].length);
+  }
+}
+
+function parseAttributes(context) {
+  const props = [];
+  const directives = [];
+  while (
+    context.source.length &&
+    !context.source.startsWith('>') &&
+    !context.source.startsWith('/>')
+  ) {
+    const attr = parseAttribute(context);
+    if (attr.type === _ast__WEBPACK_IMPORTED_MODULE_1__.NodeTypes.ATTRIBUTE) {
+      props.push(attr);
+    } else {
+      directives.push(attr);
+    }
+  }
+  return { props, directives };
+}
+
+function parseAttribute(context) {
+  // Name.
+  // name判断很宽除了下述几个字符外都支持
+  const match = /^[^\t\r\n\f />][^\t\r\n\f />=]*/.exec(context.source);
+  const name = match[0];
+
+  advanceBy(context, name.length);
+  advanceSpaces(context);
+
+  // Value
+  let value;
+  if (context.source[0] === '=') {
+    advanceBy(context, 1);
+    advanceSpaces(context);
+    value = parseAttributeValue(context);
+    advanceSpaces(context);
+  }
+
+  // Directive
+  if (/^(v-|:|@)/.test(name)) {
+    let dirName, argContent;
+    if (name[0] === ':') {
+      dirName = 'bind';
+      argContent = name.slice(1);
+    } else if (name[0] === '@') {
+      dirName = 'on';
+      argContent = name.slice(1);
+    } else if (name.startsWith('v-')) {
+      [dirName, argContent] = name.slice(2).split(':');
+    }
+
+    return {
+      type: _ast__WEBPACK_IMPORTED_MODULE_1__.NodeTypes.DIRECTIVE,
+      name: dirName,
+      exp: value && {
+        type: _ast__WEBPACK_IMPORTED_MODULE_1__.NodeTypes.SIMPLE_EXPRESSION,
+        content: value.content,
+        isStatic: false,
+      },
+      arg: argContent && {
+        type: _ast__WEBPACK_IMPORTED_MODULE_1__.NodeTypes.SIMPLE_EXPRESSION,
+        content: (0,_utils__WEBPACK_IMPORTED_MODULE_0__.camelize)(argContent),
+        isStatic: true,
+      }
+    };
+  }
+
+  // Attribute
+  return {
+    type: _ast__WEBPACK_IMPORTED_MODULE_1__.NodeTypes.ATTRIBUTE,
+    name,
+    value: value && {
+      type: _ast__WEBPACK_IMPORTED_MODULE_1__.NodeTypes.TEXT,
+      content: value.content,
+    },
+  };
+}
+
+function parseAttributeValue(context) {
+  // 不考虑没有引号的情况
+  const quote = context.source[0];
+  advanceBy(context, 1);
+
+  const endIndex = context.source.indexOf(quote);
+  const content = parseTextData(context, endIndex);
+
+  advanceBy(context, 1);
+
+  return { content };
+}
+
+
+/***/ }),
+
 /***/ "./src/reactivity/computed.js":
 /*!************************************!*\
   !*** ./src/reactivity/computed.js ***!
@@ -166,6 +767,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   "computed": () => (/* reexport safe */ _computed_js__WEBPACK_IMPORTED_MODULE_3__.computed),
 /* harmony export */   "effect": () => (/* reexport safe */ _effect_js__WEBPACK_IMPORTED_MODULE_0__.effect),
 /* harmony export */   "isReactive": () => (/* reexport safe */ _reactive_js__WEBPACK_IMPORTED_MODULE_1__.isReactive),
+/* harmony export */   "isRef": () => (/* reexport safe */ _ref_js__WEBPACK_IMPORTED_MODULE_2__.isRef),
 /* harmony export */   "reactive": () => (/* reexport safe */ _reactive_js__WEBPACK_IMPORTED_MODULE_1__.reactive),
 /* harmony export */   "ref": () => (/* reexport safe */ _ref_js__WEBPACK_IMPORTED_MODULE_2__.ref)
 /* harmony export */ });
@@ -201,7 +803,9 @@ __webpack_require__.r(__webpack_exports__);
 const proxyMap = new WeakMap();
 
 function reactive(target) {
-  if (!target) return;
+  if (!(0,_utils_index_js__WEBPACK_IMPORTED_MODULE_0__.isObject)(target)) {
+    return target;
+  }
 
   // 解决对象的重复代理，仅第一次生效
   if (isReactive(target)) {
@@ -223,9 +827,9 @@ function reactive(target) {
         return true;
       }
       console.log('获取代理key的值');
-      const res = Reflect.get(target, key, receiver);
       // 调用收集依赖
       (0,_effect_js__WEBPACK_IMPORTED_MODULE_1__.track)(target, key);
+      const res = Reflect.get(target, key, receiver);
       // 对深层对象做递归代理处理
       return (0,_utils_index_js__WEBPACK_IMPORTED_MODULE_0__.isObject)(res) ? reactive(res) : res;
     },
@@ -235,12 +839,12 @@ function reactive(target) {
       const res = Reflect.set(target, key, value, receiver);
 
       // 判断对象的值是否变更
-      if ((0,_utils_index_js__WEBPACK_IMPORTED_MODULE_0__.hasChanged)(oldValue, value)) {
+      if ((0,_utils_index_js__WEBPACK_IMPORTED_MODULE_0__.hasChanged)(value, oldValue)) {
         // 触发依赖
         (0,_effect_js__WEBPACK_IMPORTED_MODULE_1__.trigger)(target, key);
         const oldLength = target.length;
         // 判断 target 是否为数组，需要做特殊处理
-        if ((0,_utils_index_js__WEBPACK_IMPORTED_MODULE_0__.isArray)(target) && (0,_utils_index_js__WEBPACK_IMPORTED_MODULE_0__.hasChanged)(oldLength, target.length)) {
+        if ((0,_utils_index_js__WEBPACK_IMPORTED_MODULE_0__.isArray)(target) && target.length !== oldLength) {
           // 触发数组长度相关的副作用函数
           (0,_effect_js__WEBPACK_IMPORTED_MODULE_1__.trigger)(target, 'length');
         }
@@ -269,6 +873,7 @@ function isReactive(target) {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "isRef": () => (/* binding */ isRef),
 /* harmony export */   "ref": () => (/* binding */ ref)
 /* harmony export */ });
 /* harmony import */ var _utils_index_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../utils/index.js */ "./src/utils/index.js");
@@ -278,10 +883,6 @@ __webpack_require__.r(__webpack_exports__);
 
 
 
-function isRef(value) {
-  return !!(value && value.__isRef);
-}
-
 function ref(value) {
   if (isRef(value)) {
     return value;
@@ -290,9 +891,8 @@ function ref(value) {
   return new RefImpl(value);
 }
 
-// 将复杂类型对象转为响应式对象，简单类型不做处理
-function convert(value) {
-  return (0,_utils_index_js__WEBPACK_IMPORTED_MODULE_0__.isObject)(value) ? (0,_reactive_js__WEBPACK_IMPORTED_MODULE_2__.reactive)(value) : value;
+function isRef(value) {
+  return !!(value && value.__isRef);
 }
 
 /* 实现 ref 类 */
@@ -316,6 +916,11 @@ class RefImpl {
   }
 }
 
+// 将复杂类型对象转为响应式对象，简单类型不做处理
+function convert(value) {
+  return (0,_utils_index_js__WEBPACK_IMPORTED_MODULE_0__.isObject)(value) ? (0,_reactive_js__WEBPACK_IMPORTED_MODULE_2__.reactive)(value) : value;
+}
+
 
 /***/ }),
 
@@ -330,8 +935,10 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   "mountComponent": () => (/* binding */ mountComponent)
 /* harmony export */ });
 /* harmony import */ var _reactivity_index_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../reactivity/index.js */ "./src/reactivity/index.js");
-/* harmony import */ var _scheduler_js__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./scheduler.js */ "./src/runtime/scheduler.js");
-/* harmony import */ var _vnode_js__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./vnode.js */ "./src/runtime/vnode.js");
+/* harmony import */ var _vnode_js__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./vnode.js */ "./src/runtime/vnode.js");
+/* harmony import */ var _scheduler_js__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./scheduler.js */ "./src/runtime/scheduler.js");
+/* harmony import */ var _compiler_index_js__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ../compiler/index.js */ "./src/compiler/index.js");
+
 
 
 
@@ -339,15 +946,14 @@ __webpack_require__.r(__webpack_exports__);
 function mountComponent(vnode, container, anchor, patch) {
   const { type: Component } = vnode;
   const instance = (vnode.component = {
-    props: null,
-    attrs: null,
+    props: {},
+    attrs: {},
     setupState: null,
     ctx: null,
-    mount: null,
     update: null,
-    subTree: null,
     isMounted: false,
-    next: null, // 储存n2
+    subTree: null,
+    next: null, // 组件更新时，把新vnode暂放在这里
   });
 
   updateProps(instance, vnode);
@@ -361,20 +967,29 @@ function mountComponent(vnode, container, anchor, patch) {
     ...instance.setupState,
   };
 
-  // 组件更新函数
+  if (!Component.render && Component.template) {
+    let { template } = Component;
+    if (template[0] === '#') {
+      const el = document.querySelector(template);
+      template = el ? el.innerHTML : '';
+    }
+    Component.render = new Function('ctx', (0,_compiler_index_js__WEBPACK_IMPORTED_MODULE_3__.compile)(template));
+  }
+
+  // 组件更新函数 ==> setupRenderEffect
   instance.update = (0,_reactivity_index_js__WEBPACK_IMPORTED_MODULE_0__.effect)(
     () => {
       if (!instance.isMounted) {
         // 挂载组件(接收组件产出的vnode)
-        const subTree = (instance.subTree = (0,_vnode_js__WEBPACK_IMPORTED_MODULE_2__.normalizeVNode)(
+        const subTree = (instance.subTree = (0,_vnode_js__WEBPACK_IMPORTED_MODULE_1__.normalizeVNode)(
           Component.render(instance.ctx)
         ));
 
         fallThrough(instance, subTree);
 
         patch(null, subTree, container, anchor);
-        vnode = subTree.el;
         instance.isMounted = true;
+        vnode = subTree.el;
       } else {
         // 更新组件
         if (instance.next) {
@@ -388,35 +1003,37 @@ function mountComponent(vnode, container, anchor, patch) {
         }
 
         const prev = instance.subTree;
-        const subTree = (instance.subTree = (0,_vnode_js__WEBPACK_IMPORTED_MODULE_2__.normalizeVNode)(
+        const subTree = (instance.subTree = (0,_vnode_js__WEBPACK_IMPORTED_MODULE_1__.normalizeVNode)(
           Component.render(instance.ctx)
         ));
         fallThrough(instance, subTree);
 
         patch(prev, subTree.container, anchor);
-        vnode = subTree.el;
+        vnode.el = subTree.el;
       }
     },
     {
-      scheduler: _scheduler_js__WEBPACK_IMPORTED_MODULE_1__.queueJob,
+      scheduler: _scheduler_js__WEBPACK_IMPORTED_MODULE_2__.queueJob,
     }
   );
 }
 
 function updateProps(instance, vnode) {
-  const { type: commonent, props: vnodeProps } = vnode;
+  const { type: Commonent, props: vnodeProps } = vnode;
   const props = (instance.props = {});
   const attrs = (instance.attrs = {});
 
   // 用虚拟节点的属性赋值给组件实例
   for (const key in vnodeProps) {
-    if (commonent.props?.includes(key)) {
+    if (Commonent.props?.includes(key)) {
       props[key] = vnodeProps[key];
     } else {
       attrs[key] = vnodeProps[key];
     }
   }
 
+  // toThink: props源码是shallowReactive，确实需要吗?
+  // 需要。否则子组件修改props不会触发更新
   // 将组件的 props 变为响应式对象
   instance.props = (0,_reactivity_index_js__WEBPACK_IMPORTED_MODULE_0__.reactive)(instance.props);
 }
@@ -441,24 +1058,135 @@ function fallThrough(instance, subTree) {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "createApp": () => (/* binding */ createApp)
+/* harmony export */   "createApp": () => (/* binding */ createApp),
+/* harmony export */   "resolveComponent": () => (/* binding */ resolveComponent)
 /* harmony export */ });
-/* harmony import */ var _index_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./index.js */ "./src/runtime/index.js");
-/* harmony import */ var _utils_index_js__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ../utils/index.js */ "./src/utils/index.js");
+/* harmony import */ var _render__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./render */ "./src/runtime/render.js");
+/* harmony import */ var _utils__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ../utils */ "./src/utils/index.js");
+/* harmony import */ var _vnode__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./vnode */ "./src/runtime/vnode.js");
 
 
 
+
+let components;
 function createApp(rootComponent) {
+  components = rootComponent.components || {};
   const app = {
     mount(rootContainer) {
-      if ((0,_utils_index_js__WEBPACK_IMPORTED_MODULE_1__.isString)(rootContainer)) {
+      if (typeof rootContainer === 'string') {
         rootContainer = document.querySelector(rootContainer);
       }
-      (0,_index_js__WEBPACK_IMPORTED_MODULE_0__.render)((0,_index_js__WEBPACK_IMPORTED_MODULE_0__.h)(rootComponent), rootContainer);
+
+      if (!(0,_utils__WEBPACK_IMPORTED_MODULE_1__.isFunction)(rootComponent.render) && !rootComponent.template) {
+        rootComponent.template = rootContainer.innerHTML;
+      }
+      rootContainer.innerHTML = '';
+
+      (0,_render__WEBPACK_IMPORTED_MODULE_0__.render)((0,_vnode__WEBPACK_IMPORTED_MODULE_2__.h)(rootComponent), rootContainer);
     },
   };
-
   return app;
+}
+
+function resolveComponent(name) {
+  return (
+    components &&
+    (components[name] ||
+      components[(0,_utils__WEBPACK_IMPORTED_MODULE_1__.camelize)(name)] ||
+      components[(0,_utils__WEBPACK_IMPORTED_MODULE_1__.capitalize)((0,_utils__WEBPACK_IMPORTED_MODULE_1__.camelize)(name))])
+  );
+}
+
+
+/***/ }),
+
+/***/ "./src/runtime/helpers/renderList.js":
+/*!*******************************************!*\
+  !*** ./src/runtime/helpers/renderList.js ***!
+  \*******************************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "renderList": () => (/* binding */ renderList)
+/* harmony export */ });
+/* harmony import */ var _utils__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../../utils */ "./src/utils/index.js");
+
+
+function renderList(source, renderItem) {
+  const vnodes = [];
+  if ((0,_utils__WEBPACK_IMPORTED_MODULE_0__.isNumber)(source)) {
+    for (let i = 0; i < source; i++) {
+      vnodes.push(renderItem(i + 1, i));
+    }
+  } else if ((0,_utils__WEBPACK_IMPORTED_MODULE_0__.isString)(source) || (0,_utils__WEBPACK_IMPORTED_MODULE_0__.isArray)(source)) {
+    for (let i = 0; i < source.length; i++) {
+      vnodes.push(renderItem(source[i], i));
+    }
+  } else if ((0,_utils__WEBPACK_IMPORTED_MODULE_0__.isObject)(source)) {
+    const keys = Object.keys(source);
+    keys.forEach((key, index) => {
+      vnodes.push(renderItem(source[key], key, index));
+    });
+  }
+  return vnodes;
+}
+
+
+/***/ }),
+
+/***/ "./src/runtime/helpers/vModel.js":
+/*!***************************************!*\
+  !*** ./src/runtime/helpers/vModel.js ***!
+  \***************************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "withModel": () => (/* binding */ withModel)
+/* harmony export */ });
+/* harmony import */ var _utils__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../../utils */ "./src/utils/index.js");
+
+
+function withModel(tag, props, getter, setter) {
+  props = props || {};
+  if (tag === 'input') {
+    switch (props.type) {
+      case 'radio':
+        props.checked = getter() === props.value;
+        props.onChange = (e) => setter(e.target.value);
+        break;
+      case 'checkbox':
+        const modelValue = getter();
+        if ((0,_utils__WEBPACK_IMPORTED_MODULE_0__.isArray)(modelValue)) {
+          props.checked = modelValue.includes(props.value);
+          props.onChange = (e) => {
+            const { value } = e.target;
+            const values = new Set(getter());
+            if (values.has(value)) {
+              values.delete(value);
+            } else {
+              values.add(value);
+            }
+            props.checked = values.has(props.value);
+            setter([...values]);
+          };
+        } else {
+          props.checked = modelValue;
+          props.onChange = (e) => {
+            props.checked = e.target.checked;
+            setter(e.target.checked);
+          };
+        }
+        break;
+      default:
+        // 'input'
+        props.value = getter();
+        props.onInput = (e) => setter(e.target.value);
+        break;
+    }
+  }
+  return props;
 }
 
 
@@ -472,17 +1200,23 @@ function createApp(rootComponent) {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   "Fragment": () => (/* reexport safe */ _vnode_js__WEBPACK_IMPORTED_MODULE_1__.Fragment),
-/* harmony export */   "Text": () => (/* reexport safe */ _vnode_js__WEBPACK_IMPORTED_MODULE_1__.Text),
-/* harmony export */   "createApp": () => (/* reexport safe */ _createApp_js__WEBPACK_IMPORTED_MODULE_0__.createApp),
-/* harmony export */   "h": () => (/* reexport safe */ _vnode_js__WEBPACK_IMPORTED_MODULE_1__.h),
-/* harmony export */   "queueJob": () => (/* reexport safe */ _scheduler_js__WEBPACK_IMPORTED_MODULE_3__.queueJob),
-/* harmony export */   "render": () => (/* reexport safe */ _render_js__WEBPACK_IMPORTED_MODULE_2__.render)
+/* harmony export */   "Fragment": () => (/* reexport safe */ _vnode_js__WEBPACK_IMPORTED_MODULE_0__.Fragment),
+/* harmony export */   "Text": () => (/* reexport safe */ _vnode_js__WEBPACK_IMPORTED_MODULE_0__.Text),
+/* harmony export */   "createApp": () => (/* reexport safe */ _createApp_js__WEBPACK_IMPORTED_MODULE_2__.createApp),
+/* harmony export */   "h": () => (/* reexport safe */ _vnode_js__WEBPACK_IMPORTED_MODULE_0__.h),
+/* harmony export */   "nextTick": () => (/* reexport safe */ _scheduler_js__WEBPACK_IMPORTED_MODULE_5__.nextTick),
+/* harmony export */   "render": () => (/* reexport safe */ _render_js__WEBPACK_IMPORTED_MODULE_1__.render),
+/* harmony export */   "renderList": () => (/* reexport safe */ _helpers_renderList_js__WEBPACK_IMPORTED_MODULE_3__.renderList),
+/* harmony export */   "withModel": () => (/* reexport safe */ _helpers_vModel_js__WEBPACK_IMPORTED_MODULE_4__.withModel)
 /* harmony export */ });
-/* harmony import */ var _createApp_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./createApp.js */ "./src/runtime/createApp.js");
-/* harmony import */ var _vnode_js__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./vnode.js */ "./src/runtime/vnode.js");
-/* harmony import */ var _render_js__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./render.js */ "./src/runtime/render.js");
-/* harmony import */ var _scheduler_js__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./scheduler.js */ "./src/runtime/scheduler.js");
+/* harmony import */ var _vnode_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./vnode.js */ "./src/runtime/vnode.js");
+/* harmony import */ var _render_js__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./render.js */ "./src/runtime/render.js");
+/* harmony import */ var _createApp_js__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./createApp.js */ "./src/runtime/createApp.js");
+/* harmony import */ var _helpers_renderList_js__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./helpers/renderList.js */ "./src/runtime/helpers/renderList.js");
+/* harmony import */ var _helpers_vModel_js__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./helpers/vModel.js */ "./src/runtime/helpers/vModel.js");
+/* harmony import */ var _scheduler_js__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ./scheduler.js */ "./src/runtime/scheduler.js");
+
+
 
 
 
@@ -1073,7 +1807,12 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   "normalizeVNode": () => (/* binding */ normalizeVNode)
 /* harmony export */ });
 /* harmony import */ var _utils_index_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../utils/index.js */ "./src/utils/index.js");
+/* harmony import */ var _reactivity_index_js__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ../reactivity/index.js */ "./src/reactivity/index.js");
 
+
+
+const Text = Symbol('Text');
+const Fragment = Symbol('Fragment');
 
 // 用于标识不同的节点类型
 const ShapeFlags = {
@@ -1086,11 +1825,15 @@ const ShapeFlags = {
   CHILDREN: (1 << 4) | (1 << 5), //00110000
 };
 
-const Text = Symbol('Text');
-const Fragment = Symbol('Fragment');
-
+/**
+ * vnode有四种类型：dom元素，纯文本，Fragment，组件
+ * @param {string | Text | Fragment | Object } type
+ * @param {Object | null} props
+ * @param {string | array | null} children
+ * @returns VNode
+ */
 // 使用 render(h(rootComponent), rootContainer)
-function h(type, props, children) {
+function h(type, props = null, children = null) {
   let shapeFlag = 0;
   // 判断根节点的类型
   if ((0,_utils_index_js__WEBPACK_IMPORTED_MODULE_0__.isString)(type)) {
@@ -1100,7 +1843,7 @@ function h(type, props, children) {
     shapeFlag = ShapeFlags.TEXT;
   } else if (type === Fragment) {
     // 占位符节点<></>
-    shapeFlag = ShapeFlags.Fragment;
+    shapeFlag = ShapeFlags.FRAGMENT;
   } else {
     shapeFlag = ShapeFlags.COMPONENT;
   }
@@ -1113,15 +1856,29 @@ function h(type, props, children) {
     shapeFlag = ShapeFlags.ARRAY_CHILDREN;
   }
 
+  if (props) {
+    // 其实是因为，vnode要求immutable，这里如果直接赋值的话是浅引用
+    // 如果使用者复用了props的话，就不再immutable了，因此这里要复制一下。style同理
+    // for reactive or proxy objects, we need to clone it to enable mutation.
+    if ((0,_reactivity_index_js__WEBPACK_IMPORTED_MODULE_1__.isReactive)(props)) {
+      props = Object.assign({}, props);
+    }
+    // reactive state objects need to be cloned since they are likely to be
+    // mutated
+    if ((0,_reactivity_index_js__WEBPACK_IMPORTED_MODULE_1__.isReactive)(props.style)) {
+      props.style = Object.assign({}, props.style);
+    }
+  }
+
   return {
     type,
     props,
     children,
     shapeFlag,
     el: null,
-    anchor: null, // 用来标识当我们对新旧节点做增删或移动等操作时，以哪个节点为参照物。
-    key: null,
-    component: null, // 存储组件的实例
+    anchor: null, // fragment专有
+    key: props && (props.key != null ? props.key : null),
+    component: null, // 组件的instance
   };
 }
 
@@ -1256,159 +2013,31 @@ var __webpack_exports__ = {};
   !*** ./src/index.js ***!
   \**********************/
 __webpack_require__.r(__webpack_exports__);
-/* harmony import */ var _reactivity_ref_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./reactivity/ref.js */ "./src/reactivity/ref.js");
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "MiniVue": () => (/* binding */ MiniVue)
+/* harmony export */ });
+/* harmony import */ var _compiler_compile_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./compiler/compile.js */ "./src/compiler/compile.js");
 /* harmony import */ var _runtime_index_js__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./runtime/index.js */ "./src/runtime/index.js");
-/* harmony import */ var _runtime_scheduler_js__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./runtime/scheduler.js */ "./src/runtime/scheduler.js");
-/***************************响应式模块(reactive)***************************/
-/* 一、reactive的实现 */
-// import { reactive, effect } from './reactivity/index.js';
-
-// 1、重复代理
-// const obj = { x: 1 };
-// reactive(reactive(obj));
-// const observed = (window.observed = reactive(
-//   reactive({
-//     count: 1,
-//   })
-// ));
-
-// effect(() => {
-//   console.log('observed.count: ', observed.count + 5);
-// });
-
-// 2. 不同值代理同一对象，应只代理一次
-// const obj = { x: 1 };
-// const a = reactive(obj);
-// const b = reactive(obj);
-
-// 3. 深层对象的代理
-// 例：let a = reactive({ x: { y: { z: 1 } } })
-
-// 4. 数组
-// 例：let a = reactive([1, 2, 3])
-// const observed = (window.observed = reactive([1, 2, 3, 4]))
-
-// effect(() => {
-//     console.log('index: ', observed[4])
-// })
-// effect(() => {
-//     console.log('length: ', observed.length)
-// })
-
-// 5. 嵌套effect
-// const observed = (window.observed = reactive({
-//   count1: 1,
-//   count2: 2,
-// }));
-
-// effect(() => {
-//   effect(() => {
-//     console.log('count2 --- ', observed.count2);
-//   });
-//   console.log('count1 ---- ', observed.count1);
-// });
-
-/* 二、 ref的实现 */
-// import { ref, effect } from './reactivity/index.js';
-// const foo = (window.foo = ref(1));
-
-// effect(() => {
-//   console.log('foo: ', foo.value);
-// });
-
-/* 三、computed的实现（缓存 + 懒计算） */
-// import { ref, computed } from './reactivity/index.js';
-// const num = (window.num = ref(0));
-// window.d = computed({
-//   get() {
-//     console.log('calculate num.value * 2');
-//     return num.value * 2;
-//   },
-//   set(newVal) {
-//     console.log('update num.value');
-//     num.value = newVal;
-//   },
-// });
-
-// console.log(window.d.value);
-
-/***************************运行时模块(runtime)***************************/
-// import { render, h, Text, Fragment } from "./runtime/index.js";
-
-// const vnode = h(
-//     'div',
-//     {
-//         class: 'a b',
-//         style: {
-//             border: '1px solid',
-//             fontSize: '14px',
-//         },
-//         onClick: () => console.log('click'),
-//         id: 'foo',
-//         checked: '',
-//         custom: false
-//     },
-//     [h('ul', null, [
-//         h('li', { style: { color: 'red' } }, 1),
-//         h('li', null, 2),
-//         h('li', { style: { color: 'blue' } }, 3),
-//         h(Fragment, null, [h('li', null, '4'), h('li')]),
-//         h('li', null, [h(Text, null, 'hello world')])
-//     ])]
-// )
-
-// console.log('xx')
-// render(vnode, document.body)
-
-/***************************执行调度（scheduler）***************************/
+/* harmony import */ var _reactivity_index_js__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./reactivity/index.js */ "./src/reactivity/index.js");
 
 
 
 
-(0,_runtime_index_js__WEBPACK_IMPORTED_MODULE_1__.createApp)({
-  setup() {
-    const count = (0,_reactivity_ref_js__WEBPACK_IMPORTED_MODULE_0__.ref)(0);
-    const add = () => {
-      count.value++;
-      count.value++;
-      count.value++;
-    };
-    return {
-      count,
-      add,
-    };
-  },
-  render(ctx) {
-    console.log('render');
-    return [
-      (0,_runtime_index_js__WEBPACK_IMPORTED_MODULE_1__.h)('div', { id: 'div' }, `count: ${ctx.count.value}`),
-      (0,_runtime_index_js__WEBPACK_IMPORTED_MODULE_1__.h)(
-        'button',
-        {
-          id: 'btn',
-          onClick: ctx.add,
-        },
-        'add'
-      ),
-    ];
-  },
-}).mount(document.body);
-
-const div = document.getElementById('div');
-const btn = document.getElementById('btn');
-console.log('init num', div.innerHTML);
-
-btn.click();
-console.log('click num', div.innerHTML);
-
-setTimeout(() => {
-  // 异步宏任务
-  console.log('async click num', div.innerHTML);
-}, 0);
-
-(0,_runtime_scheduler_js__WEBPACK_IMPORTED_MODULE_2__.nextTick)(() => {
-  // 异步微任务
-  console.log('nextTick click num', div.innerHTML);
+const MiniVue = (window.MiniVue = {
+  createApp: _runtime_index_js__WEBPACK_IMPORTED_MODULE_1__.createApp,
+  render: _runtime_index_js__WEBPACK_IMPORTED_MODULE_1__.render,
+  h: _runtime_index_js__WEBPACK_IMPORTED_MODULE_1__.h,
+  Text: _runtime_index_js__WEBPACK_IMPORTED_MODULE_1__.Text,
+  Fragment: _runtime_index_js__WEBPACK_IMPORTED_MODULE_1__.Fragment,
+  renderList: _runtime_index_js__WEBPACK_IMPORTED_MODULE_1__.renderList,
+  resolveComponent: _runtime_index_js__WEBPACK_IMPORTED_MODULE_1__.resolveComponent,
+  withModel: _runtime_index_js__WEBPACK_IMPORTED_MODULE_1__.withModel,
+  nextTick: _runtime_index_js__WEBPACK_IMPORTED_MODULE_1__.nextTick,
+  reactive: _reactivity_index_js__WEBPACK_IMPORTED_MODULE_2__.reactive,
+  ref: _reactivity_index_js__WEBPACK_IMPORTED_MODULE_2__.ref,
+  computed: _reactivity_index_js__WEBPACK_IMPORTED_MODULE_2__.computed,
+  effect: _reactivity_index_js__WEBPACK_IMPORTED_MODULE_2__.effect,
+  compile: _compiler_compile_js__WEBPACK_IMPORTED_MODULE_0__.compile,
 });
 
 })();

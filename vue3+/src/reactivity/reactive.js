@@ -5,7 +5,9 @@ import { track, trigger } from './effect.js';
 const proxyMap = new WeakMap();
 
 export function reactive(target) {
-  if (!target) return;
+  if (!isObject(target)) {
+    return target;
+  }
 
   // 解决对象的重复代理，仅第一次生效
   if (isReactive(target)) {
@@ -27,9 +29,9 @@ export function reactive(target) {
         return true;
       }
       console.log('获取代理key的值');
-      const res = Reflect.get(target, key, receiver);
       // 调用收集依赖
       track(target, key);
+      const res = Reflect.get(target, key, receiver);
       // 对深层对象做递归代理处理
       return isObject(res) ? reactive(res) : res;
     },
@@ -39,12 +41,12 @@ export function reactive(target) {
       const res = Reflect.set(target, key, value, receiver);
 
       // 判断对象的值是否变更
-      if (hasChanged(oldValue, value)) {
+      if (hasChanged(value, oldValue)) {
         // 触发依赖
         trigger(target, key);
         const oldLength = target.length;
         // 判断 target 是否为数组，需要做特殊处理
-        if (isArray(target) && hasChanged(oldLength, target.length)) {
+        if (isArray(target) && target.length !== oldLength) {
           // 触发数组长度相关的副作用函数
           trigger(target, 'length');
         }

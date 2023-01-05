@@ -2,10 +2,6 @@ import { hasChanged, isObject } from '../utils/index.js';
 import { track, trigger } from './effect.js';
 import { reactive } from './reactive.js';
 
-function isRef(value) {
-  return !!(value && value.__isRef);
-}
-
 export function ref(value) {
   if (isRef(value)) {
     return value;
@@ -14,9 +10,8 @@ export function ref(value) {
   return new RefImpl(value);
 }
 
-// 将复杂类型对象转为响应式对象，简单类型不做处理
-function convert(value) {
-  return isObject(value) ? reactive(value) : value;
+export function isRef(value) {
+  return !!(value && value.__isRef);
 }
 
 /* 实现 ref 类 */
@@ -38,4 +33,9 @@ class RefImpl {
       trigger(this, 'value');
     }
   }
+}
+
+// 将复杂类型对象转为响应式对象，简单类型不做处理
+function convert(value) {
+  return isObject(value) ? reactive(value) : value;
 }
