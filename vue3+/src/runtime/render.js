@@ -128,6 +128,7 @@ function patchElement(n1, n2) {
   patchChildren(n1, n2, n2.el);
 }
 
+// 对比新旧节点的差异
 function patchChildren(n1, n2, container, anchor) {
   const { shapeFlag: prevShapeFlag, children: c1 } = n1;
   const { shapeFlag, children: c2 } = n2;
@@ -145,7 +146,7 @@ function patchChildren(n1, n2, container, anchor) {
   } else {
     if (prevShapeFlag & ShapeFlags.ARRAY_CHILDREN) {
       if (shapeFlag & ShapeFlags.ARRAY_CHILDREN) {
-        // 新旧节点都有子节点（简单认为头一个元素有key就都有key）
+        // 新旧节点都有子节点（简单认为头一个元素有key就都有key）最核心的对比
         if (c1[0] && c1[0].key != null && c2[0] && c2[0].key != null) {
           // 有key的diff算法
           patchKeyedChildren(c1, c2, container, anchor);
@@ -232,6 +233,7 @@ function patchKeyedChildren(c1, c2, container, anchor) {
     }
 
     // 用来跟踪任何节点是否有被移动
+    // 设置一个变量 `maxNewIndexSoFar`，记录当前的 `next` 在 `c1` 中找到的 `index` 的最大值。
     let maxNewIndexSoFar = 0;
     let move = false;
     const toMounted = [];
@@ -242,14 +244,25 @@ function patchKeyedChildren(c1, c2, container, anchor) {
         const { prev, j } = map.get(next.key);
         patch(prev, next, container, anchor);
         if (j < maxNewIndexSoFar) {
+          /* 
+            若 `index` 小于 `maxNewIndexSoFar`，说明需要移动。它应该移动到上一个 `next` 之后。
+            因此 `anchor` 设置为 `c2[i-1].el.nextSibling`。
+          */
           move = true;
         } else {
+          /* 
+            若新找到的 `index` 大于等于 `maxNewIndexSoFar`，说明 `index` 呈升序，
+            不需要移动，并更新 `maxNewIndexSoFar` 为 `index`（增大）。 
+          */
           maxNewIndexSoFar = j;
         }
         source[k] = j;
+        // 记录需要删除的 key
         map.delete(next.key);
       } else {
-        // 将待新添加的节点放入toMounted
+        /* 
+          再考虑没 `c1` 中没有找到相同 `key` 的情况，将待新添加的节点放入toMounted
+         */
         toMounted.push(k + i);
       }
     }
@@ -361,6 +374,7 @@ function mountTextNode(vnode, container, anchor) {
   container.insertBefore(textNode, anchor);
 }
 
+// anchor 是 Fragment 的专有属性
 function processFragment(n1, n2, container, anchor) {
   const fragmentStartAnchor = (n2.el = n1
     ? n1.el

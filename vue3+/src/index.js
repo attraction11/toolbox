@@ -98,3 +98,54 @@
 
 // console.log('xx')
 // render(vnode, document.body)
+
+/***************************执行调度（scheduler）***************************/
+import { ref } from './reactivity/ref.js';
+import { h, createApp } from './runtime/index.js';
+import { nextTick } from './runtime/scheduler.js';
+
+createApp({
+  setup() {
+    const count = ref(0);
+    const add = () => {
+      count.value++;
+      count.value++;
+      count.value++;
+    };
+    return {
+      count,
+      add,
+    };
+  },
+  render(ctx) {
+    console.log('render');
+    return [
+      h('div', { id: 'div' }, `count: ${ctx.count.value}`),
+      h(
+        'button',
+        {
+          id: 'btn',
+          onClick: ctx.add,
+        },
+        'add'
+      ),
+    ];
+  },
+}).mount(document.body);
+
+const div = document.getElementById('div');
+const btn = document.getElementById('btn');
+console.log('init num', div.innerHTML);
+
+btn.click();
+console.log('click num', div.innerHTML);
+
+setTimeout(() => {
+  // 异步宏任务
+  console.log('async click num', div.innerHTML);
+}, 0);
+
+nextTick(() => {
+  // 异步微任务
+  console.log('nextTick click num', div.innerHTML);
+});

@@ -50,7 +50,7 @@ export function h(type, props, children) {
   };
 }
 
-// 处理节点嵌套（数组外嵌套占位节点）
+// 处理节点嵌套（数组外嵌套占位节点）,方便函数能直接返回数组，字符串，数字
 export function normalizeVNode(result) {
   if (isArray(result)) {
     return h(Fragment, null, result);
