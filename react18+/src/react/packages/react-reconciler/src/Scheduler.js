@@ -29,6 +29,11 @@ export type SchedulerCallback = (isSync: boolean) => SchedulerCallback | null;
 
 // this doesn't actually exist on the scheduler, but it *does*
 // on scheduler/unstable_mock, which we'll need for internal testing
-export const unstable_yieldValue = Scheduler.unstable_yieldValue;
-export const unstable_setDisableYieldValue =
-  Scheduler.unstable_setDisableYieldValue;
+
+// * 注释这段 这两个是react内部调试时候才会用到了，我们正常不会使用，将其设置为null即可
+// export const unstable_yieldValue = Scheduler.unstable_yieldValue
+// export const unstable_setDisableYieldValue = Scheduler.unstable_setDisableYieldValue
+
+// * 添加这段
+export const unstable_yieldValue = null
+export const unstable_setDisableYieldValue = null
