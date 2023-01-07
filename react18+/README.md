@@ -2,69 +2,45 @@
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
-## Available Scripts
+## react源码调试环境
+参考1：https://gitee.com/machinist_wq/react-source-code/tree/master
+参考2：https://www.alchemistmeta.com/react-source-dev
+参考3：https://juejin.cn/post/7030673003583111176
 
-In the project directory, you can run:
 
-### `npm start`
+## React技术揭秘
+参考1：https://react.iamkasong.com/
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+## mini-react
+参考1：https://github.com/bubucuo/mini-react
+参考2：https://github.com/zh-lx/mini-react
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+## React18源码
+参考1：https://juejin.cn/post/7080854114141208612
+参考2：https://juejin.cn/post/7094037148088664078
 
-### `npm test`
+## reat 源码分层
+- 第一层：掌握术语、基本实现思路
+https://pomb.us/build-your-own-react/
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+- 第二层：掌握整体工作流程、局部细节 
+    - schedule 调度(scheduler) ==> 消息队列
+    - render 协调  (reconciler)  ==> 操作fiber
+    - commit 渲染 （renderer）==> reactDom、reactNative、ReactArt
+    - 学习理念、架构、实现 https://react.iamkasong.com/
+    - 深刻感受到 function 与 class 的区别
 
-### `npm run build`
+- 第三层：掌握关键流程的细节(探索前端边界)
+    - diff 算法
+    - hook
+    - lane 模型 二进制 掩码
+    - fiber  dfs（深度遍历）
+    - scheduler ==> 消息队列 用到小顶堆
+    - 探索、IM应用、可视化、框架、工具
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+- 第四层：掌握思想
+    - clasComponent --> 面向对象  FunctionComponent --> 函数式
+    - 函数式编程 --> hooks 实现了代数效应  react是践行代数效应
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
-
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
-
-### `npm run eject`
-
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
-
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
-
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+- 第五层: 神级大佬
+    - https://zh-hans.reactjs.org/community/team.html
