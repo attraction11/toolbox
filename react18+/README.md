@@ -12,16 +12,23 @@ This project was bootstrapped with [Create React App](https://github.com/faceboo
 参考1：https://react.iamkasong.com/
 
 ## mini-react
-参考1：https://github.com/bubucuo/mini-react
-参考2：https://github.com/zh-lx/mini-react
+参考1：https://github.com/zh-lx/mini-react
+参考2：https://github.com/bubucuo/mini-react
+
+## big-react
+参考1：https://github.com/BetaSu/big-react
 
 ## React18源码
 参考1：https://juejin.cn/post/7080854114141208612
 参考2：https://juejin.cn/post/7094037148088664078
+参考3：https://github.com/bubucuo/react18-ice/blob/master/%E6%8F%90%E5%89%8D%E6%8E%8C%E6%8F%A1React%2018%20.md
+
+## 代数效应
+参考： https://overreacted.io/zh-hans/algebraic-effects-for-the-rest-of-us/
 
 ## reat 源码分层
 - 第一层：掌握术语、基本实现思路
-https://pomb.us/build-your-own-react/
+    - 参考：https://pomb.us/build-your-own-react/
 
 - 第二层：掌握整体工作流程、局部细节 
     - schedule 调度(scheduler) ==> 消息队列
