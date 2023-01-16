@@ -1,10 +1,11 @@
+import { createRoot } from "./fiber";
+
 function render(element, container) {
-    const dom = renderDom(element);
-    container.appendChild(dom);
+    createRoot(element, container);
 }
 
 // 将 React.Element 渲染为真实 dom
-function renderDom(element) {
+export function renderDom(element) {
     let dom = null; // 要返回的dom
 
     if (!element && element !== 0) {
@@ -23,18 +24,6 @@ function renderDom(element) {
         return dom;
     }
 
-    if (Array.isArray(element)) {
-        // 列表渲染
-        dom = document.createDocumentFragment();
-        for (const item of element) {
-            const child = renderDom(item);
-            if (child) {
-                dom.appendChild(child);
-            }
-        }
-        return dom;
-    }
-
     const {
         type,
         props: { children, ...attributes },
@@ -44,39 +33,46 @@ function renderDom(element) {
         // 常规 dom 节点的渲染
         dom = document.createElement(type);
     } else if (typeof type === "function") {
-        // React 组件渲染
-        if (type.prototype.isReactComponent) {
-            // 类组件
-            const { props, type: Comp } = element;
-            const component = new Comp(props);
-            const jsx = component.render();
-            dom = renderDom(jsx);
-        } else {
-            // 函数组件
-            const { props, type: fn } = element;
-            const jsx = fn(props);
-            dom = renderDom(jsx);
-        }
+        // React 组件的渲染
+        dom = document.createDocumentFragment();
     } else {
         // 其他情况暂不考虑
         return null;
     }
 
-    if (children) {
-        // 如果存在 children， 对子节点进行递归渲染
-        const childrenDOM = renderDom(children);
-        if (childrenDOM) {
-            dom.appendChild(childrenDOM);
-        }
-    }
-
-    updateAttributes(dom, attributes)
+    updateAttributes(dom, attributes);
 
     return dom;
 }
 
 // 更新 DOM 属性
-function updateAttributes(dom, attributes) {
+export function updateAttributes(dom, attributes, oldAttributes) {
+    if (oldAttributes) {
+        // 有旧属性，移除旧属性
+        Object.keys(oldAttributes).forEach((key) => {
+            if (key.startsWith("on")) {
+                // 移除旧事件
+                const eventName = key.slice(2).toLowerCase();
+                dom.removeEventListener(eventName, oldAttributes[key]);
+            } else if (key === "className") {
+                // className 的处理
+                const classes = oldAttributes[key].split(" ");
+                classes.forEach((classKey) => {
+                    dom.classList.remove(classKey);
+                });
+            } else if (key === "style") {
+                // style处理
+                const style = oldAttributes[key];
+                Object.keys(style).forEach((styleName) => {
+                    dom.style[styleName] = "initial";
+                });
+            } else {
+                // 其他属性的处理
+                dom[key] = "";
+            }
+        });
+    }
+
     Object.keys(attributes).forEach((key) => {
         if (key.startsWith("on")) {
             // 事件的处理
