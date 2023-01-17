@@ -19,6 +19,7 @@ This project was bootstrapped with [Create React App](https://github.com/faceboo
 参考1：https://github.com/BetaSu/big-react
 
 ## React18源码
+参考0：https://github.com/neroneroffy/react-source-code-debug
 参考1：https://juejin.cn/post/7080854114141208612
 参考2：https://juejin.cn/post/7094037148088664078
 参考3：https://github.com/bubucuo/react18-ice/blob/master/%E6%8F%90%E5%89%8D%E6%8E%8C%E6%8F%A1React%2018%20.md
