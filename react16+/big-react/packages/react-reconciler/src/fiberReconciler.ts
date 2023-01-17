@@ -10,8 +10,8 @@ import {
 } from './updateQueue';
 
 export function createContainer(container: Container) {
-	const hostRootFiber = new FiberNode(HostRoot, {}, null);
-	const root = new FiberRootNode(container, hostRootFiber);
+	const hostRootFiber = new FiberNode(HostRoot, {}, null); // hostRootFiber
+	const root = new FiberRootNode(container, hostRootFiber); // fiberRoot
 	initializeUpdateQueue(hostRootFiber);
 	return root;
 }
