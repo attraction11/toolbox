@@ -67,7 +67,7 @@ function commitRoot(root: FiberRootNode) {
 		return;
 	}
 	// 重置
-	root.finishedWork = null;
+	root.finishedWork = null;	
 
 	const subtreeHasEffect =
 		(finishedWork.subtreeFlags & MutationMask) !== NoFlags;
@@ -103,7 +103,8 @@ function workLoop() {
 
 function performUnitOfWork(fiber: FiberNode) {
 	const next = beginWork(fiber);
-
+	// 执行完beginWork后，pendingProps 变为 memoizedProps
+	fiber.memoizedProps = fiber.pendingProps;
 	if (next === null) {
 		completeUnitOfWork(fiber);
 	} else {

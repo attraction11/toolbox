@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en-US">
+    <head>
+        <meta charset="utf-8" />
+        <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+        <meta name="viewport" content="width=device-width" />
+        <title>Channel messaging demo</title>
+    </head>
+    <body>
+        <h1>Channel messaging demo</h1>
+        <p class="output">My body</p>
+        <iframe src="page2.html" width="480" height="320"></iframe>
+        <script>
+            var channel = new MessageChannel();
+            var para = document.querySelector("p");
+
+            var ifr = document.querySelector("iframe");
+            var otherWindow = ifr.contentWindow;
+
+            ifr.addEventListener("load", iframeLoaded, false);
+
+            function iframeLoaded() {
+                otherWindow.postMessage("Hello from the main page!", "*", [
+                    channel.port2,
+                ]);
+            }
+
+            channel.port1.onmessage = handleMessage;
+            function handleMessage(e) {
+                para.innerHTML = e.data;
+            }
+        </script>
+    </body>
+</html>
