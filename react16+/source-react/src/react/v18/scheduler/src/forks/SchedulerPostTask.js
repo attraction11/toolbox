@@ -52,6 +52,7 @@ export const unstable_now = getCurrentTime;
 // thread, like user events. By default, it yields multiple times per frame.
 // It does not attempt to align with frame boundaries, since most tasks don't
 // need to be frame aligned; for those that do, use requestAnimationFrame.
+// 时间切片周期, 默认是5ms(如果一个task运行超过该周期, 下一个task执行之前, 会把控制权归还浏览器)
 const yieldInterval = 5;
 let deadline = 0;
 

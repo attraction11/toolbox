@@ -1276,13 +1276,15 @@ function updateHostRoot(current, workInProgress, renderLanes) {
   if (current === null) {
     throw new Error('Should have a current fiber. This is a bug in React.');
   }
-
+  // 1. 状态计算, 更新整合到 workInProgress.memoizedState中来
+  // 根据fiber.pendingProps, fiber.updateQueue等输入数据状态, 计算fiber.memoizedState作为输出状态
   const nextProps = workInProgress.pendingProps;
   const prevState = workInProgress.memoizedState;
   const prevChildren = prevState.element;
   cloneUpdateQueue(current, workInProgress);
+  // 遍历updateQueue.shared.pending, 提取有足够优先级的update对象, 计算出最终的状态 workInProgress.memoizedState
   processUpdateQueue(workInProgress, nextProps, null, renderLanes);
-
+  // 2. 获取下级`ReactElement`对象
   const nextState: RootState = workInProgress.memoizedState;
   const root: FiberRoot = workInProgress.stateNode;
   pushRootTransition(workInProgress, root, renderLanes);
@@ -1389,6 +1391,7 @@ function updateHostRoot(current, workInProgress, renderLanes) {
     if (nextChildren === prevChildren) {
       return bailoutOnAlreadyFinishedWork(current, workInProgress, renderLanes);
     }
+    // 3. 根据`ReactElement`对象, 调用`reconcileChildren`生成`Fiber`子节点(只生成`次级子节点`)
     reconcileChildren(current, workInProgress, nextChildren, renderLanes);
   }
   return workInProgress.child;
@@ -3673,6 +3676,7 @@ function beginWork(
   }
 
   if (current !== null) {
+    // update逻辑, 首次render不会进入
     const oldProps = current.memoizedProps;
     const newProps = workInProgress.pendingProps;
 
@@ -3742,9 +3746,10 @@ function beginWork(
   // the update queue. However, there's an exception: SimpleMemoComponent
   // sometimes bails out later in the begin phase. This indicates that we should
   // move this assignment out of the common path and into each branch.
+  // 1. 设置workInProgress优先级为NoLanes(最高优先级)
   workInProgress.lanes = NoLanes;
-
-  switch (workInProgress.tag) {
+  // 2. 根据workInProgress节点的类型, 用不同的方法派生出子节点
+  switch (workInProgress.tag) { // 只保留了本例使用到的case
     case IndeterminateComponent: {
       return mountIndeterminateComponent(
         current,

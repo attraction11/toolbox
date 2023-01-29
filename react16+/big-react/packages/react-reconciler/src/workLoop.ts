@@ -57,10 +57,17 @@ const RootCompleted = 2;
 // 与调度effect相关
 let rootDoesHavePassiveEffects = false;
 
+// 唯一接收输入信号的函数
 export function scheduleUpdateOnFiber(fiber: FiberNode, lane: Lane) {
+	/* 		
+		逻辑进入到scheduleUpdateOnFiber之后, 后面有 2 种可能:
+		1. 不经过调度, 直接进行fiber构造.
+		2. 注册调度任务, 经过Scheduler包的调度, 间接进行fiber构造.
+	*/
 	if (__LOG__) {
 		console.log('开始schedule阶段', fiber, lane);
 	}
+	// 标记优先级(在fiber树构造(对比更新)中才会发挥作用)
 	const root = markUpdateLaneFromFiberToRoot(fiber, lane);
 	// TODO 饥饿问题
 	markRootUpdated(root, lane);
@@ -68,6 +75,8 @@ export function scheduleUpdateOnFiber(fiber: FiberNode, lane: Lane) {
 	if (root === null) {
 		return;
 	}
+
+	// 进入第2阶段, 注册调度任务, 经过`Scheduler`包的调度, 间接进行`fiber构造`
 	ensureRootIsScheduled(root);
 }
 
@@ -96,7 +105,8 @@ function markUpdateLaneFromFiberToRoot(fiber: FiberNode, lane: Lane) {
 }
 
 function ensureRootIsScheduled(root: FiberRootNode) {
-	const updateLanes = getNextLanes(root);
+	// 前半部分: 判断是否需要注册新的调度
+	const updateLanes = getNextLanes(root); // 获取本次`render`的优先级
 	const existingCallback = root.callbackNode;
 
 	if (updateLanes === NoLanes) {
@@ -115,9 +125,16 @@ function ensureRootIsScheduled(root: FiberRootNode) {
 		// 如果优先级相同，则不需要调度新的，退出调度
 		return;
 	}
+	// 节流防抖
 	if (existingCallback !== null) {
 		cancelSchedulerCallback(existingCallback);
 	}
+
+	/* 
+		后半部分: 注册调度任务
+		1. performSyncWorkOnRoot或performConcurrentWorkOnRoot被封装到了任务回调(scheduleCallback)中
+		2. 等待调度中心执行任务, 任务运行其实就是执行performSyncWorkOnRoot或performConcurrentWorkOnRoot
+	*/
 	// 如果使用Scheduler调度，则会存在新的callbackNode，用React微任务调度不会存在
 	let newCallbackNode = null;
 	if (curPriority === SyncLane) {
@@ -140,6 +157,11 @@ function ensureRootIsScheduled(root: FiberRootNode) {
 	root.callbackPriority = curPriority;
 }
 
+/* 
+	performConcurrentWorkOnRoot的逻辑与performSyncWorkOnRoot的不同之处在于, 对于可中断渲染的支持:
+	1. 调用performConcurrentWorkOnRoot函数时, 首先检查是否处于render过程中, 是否需要恢复上一次渲染.
+	2. 如果本次渲染被中断, 最后返回一个新的 performConcurrentWorkOnRoot 函数, 等待下一次调用.
+*/
 function performConcurrentWorkOnRoot(
 	root: FiberRootNode,
 	didTimeout: boolean
@@ -150,6 +172,7 @@ function performConcurrentWorkOnRoot(
 
 	// 开始执行具体工作前，保证上一次的useEffct都执行了
 	// 同时要注意useEffect执行时触发的更新优先级是否大于当前更新的优先级
+	// 1. 刷新pending状态的effects, 有可能某些effect会取消本次任务
 	const didFlushPassiveEffects = flushPassiveEffects(
 		root.pendingPassiveEffects
 	);
@@ -161,6 +184,7 @@ function performConcurrentWorkOnRoot(
 		}
 	}
 
+	// 2. 获取本次渲染的优先级
 	const lanes = getNextLanes(root);
 	if (lanes === NoLanes) {
 		return null;
@@ -169,6 +193,7 @@ function performConcurrentWorkOnRoot(
 	// 本次更新是否是并发更新？
 	// TODO 饥饿问题也会影响shouldTimeSlice
 	const shouldTimeSlice = !didTimeout;
+	// 3. 构造fiber树
 	const exitStatus = renderRoot(root, lanes, shouldTimeSlice);
 
 	ensureRootIsScheduled(root);
@@ -203,6 +228,8 @@ function renderRoot(
 	executionContext |= RenderContext;
 
 	// 初始化操作
+	// 如果在render过程中产生了新的update, 且新update的优先级与最初render的优先级有交集
+    // 那么最初render无效, 丢弃最初render的结果, 等待下一次调度
 	prepareFreshStack(root, lanes);
 
 	// render阶段具体操作
@@ -237,8 +264,10 @@ function performSyncWorkOnRoot(root: FiberRootNode, lanes: Lanes) {
 		return;
 	}
 
+	// 1. fiber树构造
 	const exitStatus = renderRoot(root, lanes, false);
 	if (exitStatus === RootCompleted) {
+		// 2. 输出: 渲染fiber树
 		const finishedWork = root.current.alternate;
 		root.finishedWork = finishedWork;
 		root.finishedLanes = lanes;
@@ -277,6 +306,7 @@ function flushPassiveEffects(pendingPassiveEffects: PendingPassiveEffects) {
 }
 
 function commitRoot(root: FiberRootNode) {
+	// 设置局部变量
 	const finishedWork = root.finishedWork;
 	const pendingPassiveEffects = root.pendingPassiveEffects;
 
@@ -288,7 +318,7 @@ function commitRoot(root: FiberRootNode) {
 	}
 	const lanes = root.finishedLanes;
 
-	// 重置
+	// 重置（清空FiberRoot对象上的属性）
 	root.finishedWork = null;
 	root.finishedLanes = NoLanes;
 	root.callbackNode = null;
@@ -302,9 +332,9 @@ function commitRoot(root: FiberRootNode) {
 
 	/*
 		useEffect的执行包括2种情况：
-			1. deps变化导致的
-			2. 组件卸载，触发destory
-			首先在这里调度回调
+		1. deps变化导致的
+		2. 组件卸载，触发destory
+		首先在这里调度回调
 	*/
 	if (
 		(finishedWork.flags & PassiveMask) !== NoFlags ||
@@ -329,15 +359,15 @@ function commitRoot(root: FiberRootNode) {
 		executionContext |= CommitContext;
 		// 有副作用要执行
 
-		// 阶段1/3:beforeMutation
+		// 阶段1/3:beforeMutation，dom突变之前
 
-		// 阶段2/3:Mutation
+		// 阶段2/3:Mutation，dom突变, 界面发生改变
 		commitMutationEffects(finishedWork, root);
 
 		// Fiber Tree切换
 		root.current = finishedWork;
 
-		// 阶段3/3:Layout
+		// 阶段3/3:layout阶段, 调用生命周期componentDidUpdate和回调函数等
 
 		executionContext = prevExecutionContext;
 	} else {

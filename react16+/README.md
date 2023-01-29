@@ -60,4 +60,10 @@ This project was bootstrapped with [Create React App](https://github.com/faceboo
     - 每个 useState 对应一个 hook 对象，而没有 hook 对象中的更新可以为多个。
 ## 调试 react
 - 参考：https://github.com/neroneroffy/react-source-code-debug
+#### react-reconciler包的主要作用
+- 将主要功能分为 4 个方面:
+    - 输入：暴露api函数（如：scheduleUpdateOnFiber）、供给其他包（如react包）调用
+    - 注册调度任务：与调度中心（scheduler包）交互，注册调度任务task，等待任务的调用
+    - 执行任务回调：在内存中构造出fiber树，同时与渲染器交互，在内存中创建出与fiber对应的DOM节点
+    - 输出：与渲染器（react-dom）交互，渲染dom节点
 

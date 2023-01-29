@@ -48,6 +48,7 @@ export function isSubsetOfLanes(set: Lanes, subset: Lanes | Lane) {
 
 // 当前没有做特殊处理，但是保留了lanes的灵活性
 export function getNextLanes(root: FiberRootNode): Lanes {
+	// 1. check是否有等待中的lanes
 	const pendingLanes = root.pendingLanes;
 	if (pendingLanes === NoLanes) {
 		return NoLanes;
@@ -57,6 +58,8 @@ export function getNextLanes(root: FiberRootNode): Lanes {
 	if (nextLanes === NoLanes) {
 		return NoLanes;
 	}
+
+	// 2. check是否有已过期的lanes
 	// TODO render阶段更新
 
 	return nextLanes;

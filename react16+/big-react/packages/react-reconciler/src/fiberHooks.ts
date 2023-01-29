@@ -27,6 +27,7 @@ let currentHook: Hook | null = null;
 let currentlyRenderingFiber: FiberNode | null = null;
 let renderLanes: Lanes = NoLanes;
 interface Hook {
+	// 内存状态, 用于输出成最终的fiber树
 	memoizedState: any;
 	// 对于state，保存update相关数据
 	updateQueue: unknown;
@@ -34,6 +35,7 @@ interface Hook {
 	baseQueue: Update<any> | null;
 	// 对于state，基于baseState开始计算更新，与memoizedState的区别在于上次更新是否存在跳过
 	baseState: any;
+	// 指向该function组件的下一个Hook对象, 使得多个Hook之间也构成了一个链表.
 	next: Hook | null;
 }
 
