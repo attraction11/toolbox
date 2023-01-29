@@ -1,3 +1,4 @@
+import { updateFiberProps } from 'react-dom/src/SyntheticEvent';
 import { FiberNode } from './fiber';
 import { NoFlags, Update } from './fiberFlags';
 import {
@@ -5,8 +6,9 @@ import {
 	createInstance,
 	createTextInstance,
 	Instance
-} from './hostConfig';
+} from 'hostConfig';
 import {
+	Fragment,
 	FunctionComponent,
 	HostComponent,
 	HostRoot,
@@ -58,6 +60,9 @@ function markUpdate(fiber: FiberNode) {
 }
 
 export const completeWork = (workInProgress: FiberNode) => {
+	if (__LOG__) {
+		console.log('complete流程', workInProgress.type);
+	}
 	const newProps = workInProgress.pendingProps;
 	const current = workInProgress.alternate;
 
@@ -66,9 +71,12 @@ export const completeWork = (workInProgress: FiberNode) => {
 			if (current !== null && workInProgress.stateNode) {
 				// 更新
 				// TODO 更新元素属性
+				// 不应该在此处调用updateFiberProps，应该跟着判断属性变化的逻辑，在这里打flag
+				// 再在commitWork中更新fiberProps，我准备把这个过程留到「属性变化」相关需求一起做
+				updateFiberProps(workInProgress.stateNode, newProps);
 			} else {
 				// 初始化DOM
-				const instance = createInstance(workInProgress.type);
+				const instance = createInstance(workInProgress.type, newProps);
 				// 挂载DOM
 				appendAllChildren(instance, workInProgress);
 				workInProgress.stateNode = instance;
@@ -78,7 +86,9 @@ export const completeWork = (workInProgress: FiberNode) => {
 			// 冒泡flag
 			bubbleProperties(workInProgress);
 			return null;
+		case FunctionComponent:
 		case HostRoot:
+		case Fragment:
 			bubbleProperties(workInProgress);
 			return null;
 		case HostText:
@@ -96,9 +106,6 @@ export const completeWork = (workInProgress: FiberNode) => {
 			}
 
 			// 冒泡flag
-			bubbleProperties(workInProgress);
-			return null;
-		case FunctionComponent:
 			bubbleProperties(workInProgress);
 			return null;
 		default:

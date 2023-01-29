@@ -52,3 +52,12 @@ This project was bootstrapped with [Create React App](https://github.com/faceboo
 
 - 第五层: 神级大佬
     - https://zh-hans.reactjs.org/community/team.html
+
+## react技术揭秘
+- 参考：https://react.iamkasong.com/
+    - update 数据结构：环状单向链表
+    - Hook 数据结构：无环的单向链表
+    - 每个 useState 对应一个 hook 对象，而没有 hook 对象中的更新可以为多个。
+## 调试 react
+- 参考：https://github.com/neroneroffy/react-source-code-debug
+

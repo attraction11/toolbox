@@ -53,6 +53,7 @@ const isEvent = (key) => key.startsWith("on");
 const isProperty = (key) => key !== "children" && !isEvent(key);
 const isNew = (prev, next) => (key) => prev[key] !== next[key];
 const isGone = (prev, next) => (key) => !(key in next);
+
 function updateDom(dom, prevProps, nextProps) {
     //Remove old or changed event listeners
     Object.keys(prevProps)
