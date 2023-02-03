@@ -23,8 +23,11 @@ import { Flags, PassiveEffect } from './fiberFlags';
 import { HookHasEffect, Passive } from './hookEffectTags';
 
 let workInProgressHook: Hook | null = null;
+// Hooks被存储在fiber.memoizedState 链表上
 let currentHook: Hook | null = null;
+// 当前正在构造的fiber, 等同于 workInProgress, 为了和当前hook区分, 所以将其改名
 let currentlyRenderingFiber: FiberNode | null = null;
+// 渲染优先级
 let renderLanes: Lanes = NoLanes;
 interface Hook {
 	// 内存状态, 用于输出成最终的fiber树
@@ -48,6 +51,8 @@ export const renderWithHooks = (workInProgress: FiberNode, lane: Lane) => {
 	workInProgress.updateQueue = null;
 	renderLanes = lane;
 
+	// --------------- 2. 调用function,生成子级ReactElement对象 -------------------
+  	// 指定dispatcher, 区分mount和update
 	const current = workInProgress.alternate;
 	if (current !== null) {
 		currentDispatcher.current = HooksDispatcherOnUpdate;
@@ -57,9 +62,11 @@ export const renderWithHooks = (workInProgress: FiberNode, lane: Lane) => {
 
 	const Component = workInProgress.type;
 	const props = workInProgress.pendingProps;
+	// 执行function函数, 其中进行分析Hooks的使用
 	const children = Component(props);
 
-	// 重置
+	// --------------- 3. 重置全局变量,并返回 -------------------
+  	// 执行function之后, 还原被修改的全局变量, 不影响下一次调用
 	currentlyRenderingFiber = null;
 	workInProgressHook = null;
 	currentHook = null;
